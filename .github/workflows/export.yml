@@ -1,21 +1,38 @@
 name: Export (Reusable)
+
 on:
   workflow_call:
     inputs:
-      manifest_path: { required: true, type: string }
-      package:       { required: false, type: string }
+      manifest_path:            { required: true, type: string }
+      export_scope:             { required: true, type: string }            # "app" | "package"
+      package_name:             { required: false, type: string }           # requerido si export_scope=="package"
+      appian_url:               { required: true, type: string }            # viene del repo app (variable)
+      app_props_public_json:    { required: true, type: string }            # viene del repo app (variable)
     secrets:
-      APPIAN_URL:          { required: true }
-      OAUTH_TOKEN_URL:     { required: true }
-      OAUTH_CLIENT_ID:     { required: true }
-      OAUTH_CLIENT_SECRET: { required: true }
+      APPIAN_API_KEY:           { required: true }                           # viene del repo app (secret)
+      APP_PROPS_SENSITIVE_JSON: { required: true }                           # viene del repo app (secret)
 
 jobs:
   export:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: |
+
+      # Validaciones mínimas (sin lógica real aún)
+      - name: Validate inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -f "${{ inputs.manifest_path }}" ]] || { echo "Manifest not found: ${{ inputs.manifest_path }}"; exit 1; }
+          if [[ "${{ inputs.export_scope }}" == "package" && -z "${{ inputs.package_name }}" ]]; then
+            echo "package_name is required when export_scope=package"; exit 1;
+          fi
+
+      - name: Wire check (export)
+        run: |
           echo "[core/export] MANIFEST=${{ inputs.manifest_path }}"
-          echo "[core/export] PACKAGE=${{ inputs.package }}"
-          echo "[core/export] Secrets OK"
+          echo "[core/export] SCOPE=${{ inputs.export_scope }}"
+          echo "[core/export] PACKAGE=${{ inputs.package_name }}"
+          echo "[core/export] URL=${{ inputs.appian_url }}"
+          echo "[core/export] PUBLIC_JSON length=${#${{ inputs.app_props_public_json }}}"
+          echo "[core/export] Secrets wired (API_KEY + SENSITIVE_JSON)"

@@ -1,14 +1,17 @@
 name: Promote (Reusable)
+
 on:
   workflow_call:
     inputs:
-      target_env:    { required: true, type: string }
-      manifest_path: { required: true, type: string }
+      target_env:               { required: true, type: string }            # qa | prod (el job ya se corre con ese environment)
+      manifest_path:            { required: true, type: string }
+      export_scope:             { required: true, type: string }            # "app" | "package"
+      package_name:             { required: false, type: string }           # requerido si export_scope=="package"
+      appian_url:               { required: true, type: string }
+      app_props_public_json:    { required: true, type: string }
     secrets:
-      APPIAN_URL:          { required: true }
-      OAUTH_TOKEN_URL:     { required: true }
-      OAUTH_CLIENT_ID:     { required: true }
-      OAUTH_CLIENT_SECRET: { required: true }
+      APPIAN_API_KEY:           { required: true }
+      APP_PROPS_SENSITIVE_JSON: { required: true }
 
 jobs:
   promote:
@@ -16,7 +19,33 @@ jobs:
     environment: ${{ inputs.target_env }}
     steps:
       - uses: actions/checkout@v4
-      - run: |
+
+      - name: Validate inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -f "${{ inputs.manifest_path }}" ]] || { echo "Manifest not found: ${{ inputs.manifest_path }}"; exit 1; }
+          if [[ "${{ inputs.export_scope }}" == "package" && -z "${{ inputs.package_name }}" ]]; then
+            echo "package_name is required when export_scope=package"; exit 1;
+          fi
+
+      - name: Wire check (promote)
+        run: |
           echo "[core/promote] ENV=${{ inputs.target_env }}"
           echo "[core/promote] MANIFEST=${{ inputs.manifest_path }}"
-          echo "[core/promote] Secrets OK"
+          echo "[core/promote] SCOPE=${{ inputs.export_scope }}"
+          echo "[core/promote] PACKAGE=${{ inputs.package_name }}"
+          echo "[core/promote] URL=${{ inputs.appian_url }}"
+          echo "[core/promote] PUBLIC_JSON length=${#${{ inputs.app_props_public_json }}}"
+          echo "[core/promote] Secrets wired (API_KEY + SENSITIVE_JSON)"
+
+      # (opcional) Smoke ping sin exponer valores
+      # - name: Smoke ping deployments (optional)
+      #   env:
+      #     URL: ${{ inputs.appian_url }}
+      #     KEY: ${{ secrets.APPIAN_API_KEY }}
+      #   run: |
+      #     set -e
+      #     CODE=$(curl -sS -o /dev/null -w "%{http_code}" \
+      #       -H "appian-api-key: $KEY" "$URL/suite/deployment/v1/deployments")
+      #     echo "HTTP $CODE (expected 200/401/403)"

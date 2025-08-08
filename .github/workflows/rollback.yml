@@ -1,20 +1,28 @@
 name: Rollback (Reusable)
+
 on:
   workflow_call:
     inputs:
       tag:                       { required: true, type: string }
       manifest_path:             { required: true, type: string }
-      appian_url:                { required: true, type: string }           # ← viene de vars del repo app
-      app_props_public_json:     { required: true, type: string }           # ← viene de vars del repo app
+      appian_url:                { required: true, type: string }
+      app_props_public_json:     { required: true, type: string }
     secrets:
-      APPIAN_API_KEY:            { required: true }                          # ← secret del repo app
-      APP_PROPS_SENSITIVE_JSON:  { required: true }                          # ← secret del repo app
+      APPIAN_API_KEY:            { required: true }
+      APP_PROPS_SENSITIVE_JSON:  { required: true }
 
 jobs:
   rollback:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Validate inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -f "${{ inputs.manifest_path }}" ]] || { echo "Manifest not found: ${{ inputs.manifest_path }}"; exit 1; }
+
       - name: Wire check (rollback)
         run: |
           echo "[core/rollback] TAG=${{ inputs.tag }}"
