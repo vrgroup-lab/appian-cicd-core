@@ -1,0 +1,22 @@
+name: Promote (Reusable)
+on:
+  workflow_call:
+    inputs:
+      target_env:    { required: true, type: string }
+      manifest_path: { required: true, type: string }
+    secrets:
+      APPIAN_URL:          { required: true }
+      OAUTH_TOKEN_URL:     { required: true }
+      OAUTH_CLIENT_ID:     { required: true }
+      OAUTH_CLIENT_SECRET: { required: true }
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target_env }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          echo "[core/promote] ENV=${{ inputs.target_env }}"
+          echo "[core/promote] MANIFEST=${{ inputs.manifest_path }}"
+          echo "[core/promote] Secrets OK"

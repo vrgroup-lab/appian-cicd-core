@@ -1,0 +1,21 @@
+name: Rollback (Reusable)
+on:
+  workflow_call:
+    inputs:
+      tag:          { required: true, type: string }
+      manifest_path: { required: true, type: string }
+    secrets:
+      APPIAN_URL:          { required: true }
+      OAUTH_TOKEN_URL:     { required: true }
+      OAUTH_CLIENT_ID:     { required: true }
+      OAUTH_CLIENT_SECRET: { required: true }
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          echo "[core/rollback] TAG=${{ inputs.tag }}"
+          echo "[core/rollback] MANIFEST=${{ inputs.manifest_path }}"
+          echo "[core/rollback] Secrets OK"

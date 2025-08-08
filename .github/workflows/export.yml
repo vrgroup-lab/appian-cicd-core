@@ -1,0 +1,21 @@
+name: Export (Reusable)
+on:
+  workflow_call:
+    inputs:
+      manifest_path: { required: true, type: string }
+      package:       { required: false, type: string }
+    secrets:
+      APPIAN_URL:          { required: true }
+      OAUTH_TOKEN_URL:     { required: true }
+      OAUTH_CLIENT_ID:     { required: true }
+      OAUTH_CLIENT_SECRET: { required: true }
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          echo "[core/export] MANIFEST=${{ inputs.manifest_path }}"
+          echo "[core/export] PACKAGE=${{ inputs.package }}"
+          echo "[core/export] Secrets OK"
