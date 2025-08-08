@@ -2,20 +2,23 @@ name: Rollback (Reusable)
 on:
   workflow_call:
     inputs:
-      tag:          { required: true, type: string }
-      manifest_path: { required: true, type: string }
+      tag:                       { required: true, type: string }
+      manifest_path:             { required: true, type: string }
+      appian_url:                { required: true, type: string }           # ← viene de vars del repo app
+      app_props_public_json:     { required: true, type: string }           # ← viene de vars del repo app
     secrets:
-      APPIAN_URL:          { required: true }
-      OAUTH_TOKEN_URL:     { required: true }
-      OAUTH_CLIENT_ID:     { required: true }
-      OAUTH_CLIENT_SECRET: { required: true }
+      APPIAN_API_KEY:            { required: true }                          # ← secret del repo app
+      APP_PROPS_SENSITIVE_JSON:  { required: true }                          # ← secret del repo app
 
 jobs:
   rollback:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: |
+      - name: Wire check (rollback)
+        run: |
           echo "[core/rollback] TAG=${{ inputs.tag }}"
           echo "[core/rollback] MANIFEST=${{ inputs.manifest_path }}"
-          echo "[core/rollback] Secrets OK"
+          echo "[core/rollback] URL=${{ inputs.appian_url }}"
+          echo "[core/rollback] PUBLIC_JSON length=${#${{ inputs.app_props_public_json }}}"
+          echo "[core/rollback] Secrets wired (API_KEY + SENSITIVE_JSON)"
