@@ -4,13 +4,13 @@ on:
   workflow_call:
     inputs:
       manifest_path:            { required: true, type: string }
-      export_scope:             { required: true, type: string }            # "app" | "package"
-      package_name:             { required: false, type: string }           # requerido si export_scope=="package"
-      appian_url:               { required: true, type: string }            # viene del repo app (variable)
-      app_props_public_json:    { required: true, type: string }            # viene del repo app (variable)
+      export_scope:             { required: true, type: string }   # "app" | "package"
+      package_name:             { required: false, type: string }  # requerido si export_scope=="package"
+      appian_url:               { required: true, type: string }   # viene del repo app (variable)
+      app_props_public_json:    { required: true, type: string }   # viene del repo app (variable)
     secrets:
-      APPIAN_API_KEY:           { required: true }                           # viene del repo app (secret)
-      APP_PROPS_SENSITIVE_JSON: { required: true }                           # viene del repo app (secret)
+      APPIAN_API_KEY:           { required: true }                 # viene del repo app (secret)
+      APP_PROPS_SENSITIVE_JSON: { required: true }                 # viene del repo app (secret)
 
 jobs:
   export:
@@ -29,10 +29,13 @@ jobs:
           fi
 
       - name: Wire check (export)
+        env:
+          URL: ${{ inputs.appian_url }}
+          PUBLIC_JSON: ${{ inputs.app_props_public_json }}
         run: |
           echo "[core/export] MANIFEST=${{ inputs.manifest_path }}"
           echo "[core/export] SCOPE=${{ inputs.export_scope }}"
           echo "[core/export] PACKAGE=${{ inputs.package_name }}"
-          echo "[core/export] URL=${{ inputs.appian_url }}"
-          echo "[core/export] PUBLIC_JSON length=${#${{ inputs.app_props_public_json }}}"
+          echo "[core/export] URL=${URL}"
+          echo "[core/export] PUBLIC_JSON length=${#PUBLIC_JSON}"
           echo "[core/export] Secrets wired (API_KEY + SENSITIVE_JSON)"
