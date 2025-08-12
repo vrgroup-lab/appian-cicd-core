@@ -1,0 +1,54 @@
+@startuml
+skinparam defaultFontName Monospace
+skinparam shadowing false
+
+node "GitHub" as GH {
+  node "Repo App 1" as GH1 {
+    artifact "deploy.yml (wrapper)" as D1
+  }
+  node "Repo App 2" as GH2 {
+    artifact "deploy.yml (wrapper)" as D2
+  }
+  node "Repo App n" as GHn {
+    artifact "deploy.yml (wrapper)" as Dn
+  }
+  node "Repo Core" as GHC {
+    artifact "export.yml / promote.yml / rollback.yml" as COREWF
+    artifact "CoreLib" as CORELIB
+  }
+}
+
+cloud "AWS" as AWS {
+  node "IAM (OIDC / STS)" as IAM
+  node "API Gateway" as APIGW
+  node "Lambda (Secrets Broker)" as LMB
+  database "Secrets Manager\nappian/{env}/*" as SM
+}
+
+cloud "Appian Cloud" as APPCLOUD {
+  node "Dev"  as DEV
+  node "QA"   as QA
+  node "Prod" as PROD
+  component "Deployment APIs v2" as APIDEV2
+}
+
+' ==== Flujos ====
+D1 --> COREWF : workflow_call
+D2 --> COREWF
+Dn --> COREWF
+COREWF ..> CORELIB
+
+COREWF --> IAM : AssumeRoleWithWebIdentity
+COREWF --> APIGW : HTTPS (signed/bearer)
+APIGW --> LMB : invoke
+LMB --> SM : GetSecretValue
+SM --> LMB
+LMB --> APIGW
+APIGW --> COREWF : secrets (memoria)
+
+COREWF --> APIDEV2 : export/inspect/import/promote
+APIDEV2 --> DEV
+APIDEV2 --> QA
+APIDEV2 --> PROD
+
+@enduml
