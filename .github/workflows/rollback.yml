@@ -24,9 +24,12 @@ jobs:
           [[ -f "${{ inputs.manifest_path }}" ]] || { echo "Manifest not found: ${{ inputs.manifest_path }}"; exit 1; }
 
       - name: Wire check (rollback)
+        env:
+          URL: ${{ inputs.appian_url }}
+          PUBLIC_JSON: ${{ inputs.app_props_public_json }}
         run: |
           echo "[core/rollback] TAG=${{ inputs.tag }}"
           echo "[core/rollback] MANIFEST=${{ inputs.manifest_path }}"
-          echo "[core/rollback] URL=${{ inputs.appian_url }}"
-          echo "[core/rollback] PUBLIC_JSON length=${#${{ inputs.app_props_public_json }}}"
+          echo "[core/rollback] URL=${URL}"
+          echo "[core/rollback] PUBLIC_JSON length=${#PUBLIC_JSON}"
           echo "[core/rollback] Secrets wired (API_KEY + SENSITIVE_JSON)"
