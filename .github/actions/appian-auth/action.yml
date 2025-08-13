@@ -1,0 +1,66 @@
+name: Appian Auth (OIDC + Secrets Manager)
+description: Assume AWS role by env, read Appian API key, expose as output
+inputs:
+  env:
+    description: "dev | qa | prod"
+    required: true
+  aws-region:
+    description: "AWS region of Secrets Manager"
+    required: true
+  role-dev:
+    description: "IAM role ARN for dev"
+    required: true
+  role-qa:
+    description: "IAM role ARN for qa"
+    required: true
+  role-prod:
+    description: "IAM role ARN for prod"
+    required: true
+outputs:
+  api_key:
+    description: "Appian API key for the selected env"
+    value: ${{ steps.set-output.outputs.api_key }}
+runs:
+  using: composite
+  steps:
+    - name: Pick role by env
+      id: pick
+      shell: bash
+      run: |
+        case "${{ inputs.env }}" in
+          dev)  echo "ROLE=${{ inputs.role-dev }}"  >> $GITHUB_OUTPUT ;;
+          qa)   echo "ROLE=${{ inputs.role-qa }}"   >> $GITHUB_OUTPUT ;;
+          prod) echo "ROLE=${{ inputs.role-prod }}" >> $GITHUB_OUTPUT ;;
+          *) echo "env inválido"; exit 1 ;;
+        esac
+
+    - name: Configure AWS via OIDC
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ steps.pick.outputs.ROLE }}
+        aws-region: ${{ inputs.aws-region }}
+
+    - name: Ensure jq
+      shell: bash
+      run: |
+        if ! command -v jq >/dev/null 2>&1; then
+          sudo apt-get update -y && sudo apt-get install -y jq
+        fi
+
+    - name: Read Appian API key
+      id: read
+      shell: bash
+      run: |
+        RAW=$(aws secretsmanager get-secret-value \
+          --secret-id "appian/${{ inputs.env }}/api-key" \
+          --query 'SecretString' --output text)
+        API_KEY=$(printf '%s' "$RAW" | jq -r '.["api-key"]')
+        [ -z "$API_KEY" -o "$API_KEY" = "null" ] && { echo "Secret vacío o sin key 'api-key'"; exit 1; }
+        echo "::add-mask::$API_KEY"
+        echo "API_KEY=$API_KEY" >> $GITHUB_ENV
+
+    - name: Set output
+      id: set-output
+      shell: bash
+      run: |
+        echo "api_key=${API_KEY}" >> $GITHUB_OUTPUT

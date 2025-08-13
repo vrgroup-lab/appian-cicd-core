@@ -1,0 +1,41 @@
+name: Appian Export Demo (core)
+on:
+  workflow_dispatch:
+    inputs:
+      env:
+        type: choice
+        options: [dev, qa, prod]
+        required: true
+        description: "Target env"
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  demo:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: us-east-2
+      ROLE_DEV:  arn:aws:iam::292139251031:role/gh-actions-appian-dev
+      ROLE_QA:   arn:aws:iam::292139251031:role/gh-actions-appian-qa
+      ROLE_PROD: arn:aws:iam::292139251031:role/gh-actions-appian-prod
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get Appian API key via composite action
+        id: auth
+        uses: ./.github/actions/appian-auth
+        with:
+          env:        ${{ github.event.inputs.env }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-dev:   ${{ env.ROLE_DEV }}
+          role-qa:    ${{ env.ROLE_QA }}
+          role-prod:  ${{ env.ROLE_PROD }}
+
+      - name: Call Appian (demo export)
+        env:
+          APPIAN_API_KEY: ${{ steps.auth.outputs.api_key }}
+          BASE_URL: ${{ github.event.inputs.env == 'dev' && 'https://vrgroupdemo.appiancloud.com' || github.event.inputs.env == 'qa' && 'https://TU-QA.appiancloud.com' || 'https://TU-PROD.appiancloud.com' }}
+        run: |
+          curl -sS -X GET \
+            -H "Authorization: Bearer $APPIAN_API_KEY" \
+            "$BASE_URL/suite/webapi/health" || true
