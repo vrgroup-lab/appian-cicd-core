@@ -1,4 +1,5 @@
 name: Appian Export Demo (core)
+
 on:
   workflow_call:
     inputs:
@@ -13,9 +14,11 @@ on:
         options: [dev, qa, prod]
         required: true
         description: "Target env"
+
 permissions:
   id-token: write
   contents: read
+
 jobs:
   demo:
     runs-on: ubuntu-latest
@@ -29,9 +32,9 @@ jobs:
 
       - name: Get Appian API key via composite action
         id: auth
-        uses: ./.github/actions/appian-auth
+        uses: mtombolini-vrgroup/appian-cicd-core/.github/actions/appian-auth@main
         with:
-          env:        ${{ github.event.inputs.env }}
+          env:        ${{ inputs.env }}
           aws-region: ${{ env.AWS_REGION }}
           role-dev:   ${{ env.ROLE_DEV }}
           role-qa:    ${{ env.ROLE_QA }}
@@ -40,8 +43,9 @@ jobs:
       - name: Call Appian (demo export)
         env:
           APPIAN_API_KEY: ${{ steps.auth.outputs.api_key }}
-          BASE_URL: ${{ github.event.inputs.env == 'dev' && 'https://vrgroupdemo.appiancloud.com' || github.event.inputs.env == 'qa' && 'https://TU-QA.appiancloud.com' || 'https://TU-PROD.appiancloud.com' }}
+          BASE_URL: ${{ inputs.env == 'dev' && 'https://vrgroupdemo.appiancloud.com' || inputs.env == 'qa' && 'https://TU-QA.appiancloud.com' || 'https://TU-PROD.appiancloud.com' }}
         run: |
+          echo "Calling Appian health endpoint at $BASE_URL"
           curl -sS -X GET \
             -H "Authorization: Bearer $APPIAN_API_KEY" \
             "$BASE_URL/suite/webapi/health" || true
