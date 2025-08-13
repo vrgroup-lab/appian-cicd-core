@@ -76,7 +76,7 @@ jobs:
 
       - name: Run export (with polling)
         id: export
-        uses: mtombolini-vrgroup/appian-cicd-core/.github/actions/appian-export@main
+        uses: mtombolini-vrgroup/appian-cicd-core/.github/actions/appian-export@dev
         with:
           base-url:       ${{ steps.pick.outputs.BASE_URL }}
           api-key:        ${{ steps.auth.outputs.api_key }}
