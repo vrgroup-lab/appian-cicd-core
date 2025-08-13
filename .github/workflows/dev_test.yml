@@ -1,10 +1,8 @@
 name: Dev Secret OIDC Test
 on: workflow_dispatch
-
 permissions:
-  id-token: write   # Necesario para OIDC
+  id-token: write
   contents: read
-
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -12,29 +10,18 @@ jobs:
       AWS_REGION: us-east-2
       SECRET_ID: appian/dev/api-key
       ROLE_ARN: arn:aws:iam::292139251031:role/gh-actions-appian-dev
-
     steps:
       - uses: actions/checkout@v4
-
       - name: Configure AWS via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ env.ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-
       - name: Ensure jq is available
         run: |
           if ! command -v jq >/dev/null 2>&1; then
             sudo apt-get update -y && sudo apt-get install -y jq
           fi
-
-      # (Opcional) diagnóstico rápido: lista tus secrets appian/*
-      - name: Debug list appian secrets
-        run: |
-          aws secretsmanager list-secrets \
-            --query "SecretList[?starts_with(Name, 'appian/')].{Name:Name,ARN:ARN}" \
-            --output table
-
       - name: Read DEV secret (key/value)
         id: read_secret
         shell: bash
@@ -50,4 +37,3 @@ jobs:
           echo "::add-mask::$API_KEY"
           echo "APPIAN_API_KEY=$API_KEY" >> $GITHUB_ENV
           echo "Secret leído (valor oculto)."
-
