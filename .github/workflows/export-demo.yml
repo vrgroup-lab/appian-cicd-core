@@ -1,4 +1,4 @@
-name: Appian Export Demo (core)
+name: Appian Export (reusable)
 
 on:
   workflow_call:
@@ -7,28 +7,54 @@ on:
         type: string
         required: true
         description: "dev|qa|prod"
+      export_type:
+        type: string
+        required: true
+        description: "Tipo de export: application|package"
+      uuid:
+        type: string
+        required: true
+        description: "UUID de la app o package"
+      name:
+        type: string
+        required: false
+      description:
+        type: string
+        required: false
+      download_artifacts:
+        type: boolean
+        required: false
+        default: false
+        description: "Si es package, descargar zips y scripts"
   workflow_dispatch:
     inputs:
-      env:
-        type: choice
-        options: [dev, qa, prod]
-        required: true
-        description: "Target env"
+      env:          {type: choice, options: [dev, qa, prod], required: true}
+      export_type:  {type: choice, options: [application, package], required: true}
+      uuid:         {type: string, required: true}
+      name:         {type: string, required: false}
+      description:  {type: string, required: false}
+      download_artifacts: {type: boolean, required: false, default: false}
 
 permissions:
   id-token: write
   contents: read
 
 jobs:
-  demo:
+  export:
     runs-on: ubuntu-latest
     env:
       AWS_REGION: us-east-2
       ROLE_DEV:  arn:aws:iam::292139251031:role/gh-actions-appian-dev
       ROLE_QA:   arn:aws:iam::292139251031:role/gh-actions-appian-qa
       ROLE_PROD: arn:aws:iam::292139251031:role/gh-actions-appian-prod
+      BASE_URL_DEV:  https://vrgroupdemo.appiancloud.com
+      BASE_URL_QA:   https://TU-QA.appiancloud.com
+      BASE_URL_PROD: https://TU-PROD.appiancloud.com
     steps:
       - uses: actions/checkout@v4
+        with:
+            repository: mtombolini-vrgroup/appian-cicd-core
+            ref: dev
 
       - name: Get Appian API key via composite action
         id: auth
@@ -40,12 +66,42 @@ jobs:
           role-qa:    ${{ env.ROLE_QA }}
           role-prod:  ${{ env.ROLE_PROD }}
 
-      - name: Call Appian (demo export)
+      - name: Ensure script perms
+        run: chmod +x scripts/appian_export.sh
+
+      - name: Pick BASE_URL by env
+        id: pick
+        shell: bash
+        run: |
+          case "${{ inputs.env }}" in
+            dev)  echo "BASE_URL=${BASE_URL_DEV}"  >> $GITHUB_OUTPUT ;;
+            qa)   echo "BASE_URL=${BASE_URL_QA}"   >> $GITHUB_OUTPUT ;;
+            prod) echo "BASE_URL=${BASE_URL_PROD}" >> $GITHUB_OUTPUT ;;
+            *) echo "env inválido"; exit 1 ;;
+          esac
+
+      - name: Run export (with polling)
         env:
           APPIAN_API_KEY: ${{ steps.auth.outputs.api_key }}
-          BASE_URL: ${{ inputs.env == 'dev' && 'https://vrgroupdemo.appiancloud.com' || inputs.env == 'qa' && 'https://TU-QA.appiancloud.com' || 'https://TU-PROD.appiancloud.com' }}
         run: |
-          echo "Calling Appian health endpoint at $BASE_URL"
-          curl -sS -X GET \
-            -H "Authorization: Bearer $APPIAN_API_KEY" \
-            "$BASE_URL/suite/webapi/health" || true
+          OUT_DIR=""
+          if [[ "${{ inputs.download_artifacts }}" == "true" && "${{ inputs.export_type }}" == "package" ]]; then
+            OUT_DIR="--download-out ./export-out"
+          fi
+          ./scripts/appian_export.sh \
+            --base-url "${{ steps.pick.outputs.BASE_URL }}" \
+            --api-key "$APPIAN_API_KEY" \
+            --export-type "${{ inputs.export_type }}" \
+            --uuid "${{ inputs.uuid }}" \
+            --name "${{ inputs.name }}" \
+            --description "${{ inputs.description }}" \
+            --poll-timeout-sec 900 \
+            --poll-interval-sec 5 \
+            $OUT_DIR
+
+      - name: Upload artifacts (package)
+        if: ${{ inputs.download_artifacts && inputs.export_type == 'package' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: appian-export-${{ inputs.env }}
+          path: export-out/**
