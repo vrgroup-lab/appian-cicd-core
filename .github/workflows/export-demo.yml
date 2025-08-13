@@ -52,9 +52,6 @@ jobs:
       BASE_URL_PROD: https://TU-PROD.appiancloud.com
     steps:
       - uses: actions/checkout@v4
-        with:
-            repository: mtombolini-vrgroup/appian-cicd-core
-            ref: dev
 
       - name: Get Appian API key via composite action
         id: auth
