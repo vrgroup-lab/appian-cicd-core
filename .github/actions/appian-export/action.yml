@@ -1,0 +1,159 @@
+name: Appian Export (scriptless)
+description: Trigger Appian export (application|package) with polling and optional downloads
+inputs:
+  base-url:       { description: "Appian base URL", required: true }
+  api-key:        { description: "Appian API key", required: true }
+  export-type:    { description: "application|package", required: true }
+  uuid:           { description: "UUID of application or package", required: true }
+  name:           { description: "Optional name", required: false, default: "" }
+  description:    { description: "Optional description", required: false, default: "" }
+  download-files: { description: "If package, download artifacts", required: false, default: "false" }
+  poll-timeout:   { description: "Timeout seconds", required: false, default: "900" }
+  poll-interval:  { description: "Polling interval seconds", required: false, default: "5" }
+outputs:
+  status:
+    description: "Final status"
+    value: ${{ steps.finish.outputs.status }}
+
+runs:
+  using: composite
+  steps:
+    - name: Ensure jq available
+      shell: bash
+      run: |
+        if ! command -v jq >/dev/null 2>&1; then
+          sudo apt-get update -y && sudo apt-get install -y jq
+        fi
+
+    - name: Run export with polling
+      id: run
+      shell: bash
+      env:
+        BASE_URL:       ${{ inputs.base-url }}
+        API_KEY:        ${{ inputs.api-key }}
+        EXPORT_TYPE:    ${{ inputs.export-type }}
+        UUID:           ${{ inputs.uuid }}
+        NAME:           ${{ inputs.name }}
+        DESC:           ${{ inputs.description }}
+        DOWNLOAD_FILES: ${{ inputs.download-files }}
+        POLL_TIMEOUT:   ${{ inputs.poll-timeout }}
+        POLL_INTERVAL:  ${{ inputs.poll-interval }}
+      run: |
+        set -euo pipefail
+
+        command -v curl >/dev/null 2>&1 || { echo "curl is required"; exit 127; }
+
+        if [[ "$EXPORT_TYPE" != "application" && "$EXPORT_TYPE" != "package" ]]; then
+          echo "export-type must be 'application' or 'package'." >&2
+          exit 2
+        fi
+
+        JSON_PAYLOAD=$(jq -n \
+          --arg et "$EXPORT_TYPE" \
+          --arg uuid "$UUID" \
+          --arg name "$NAME" \
+          --arg desc "$DESC" '
+          {
+            exportType: $et,
+            uuids: [$uuid]
+          }
+          + ( ($name|length)  > 0 ? {name: $name} : {} )
+          + ( ($desc|length)  > 0 ? {description: $desc} : {} )
+        ')
+
+        echo "Trigger export: type=$EXPORT_TYPE uuid=$UUID"
+        CREATE_RES=$(curl -sS --fail-with-body --connect-timeout 10 --max-time 60 -X POST \
+          -H "appian-api-key: ${API_KEY}" \
+          -H "Action-Type: export" \
+          -F "json=${JSON_PAYLOAD};type=application/json" \
+          "${BASE_URL%/}/suite/deployment-management/v2/deployments" \
+          || true)
+
+        if [[ -z "${CREATE_RES:-}" ]]; then
+          echo "Failed to start export (empty response)."
+          exit 1
+        fi
+
+        DEP_UUID=$(echo "$CREATE_RES" | jq -r '.uuid // empty')
+        STATUS=$(echo "$CREATE_RES" | jq -r '.status // empty')
+        URL=$(echo "$CREATE_RES" | jq -r '.url // empty')
+
+        if [[ -z "$DEP_UUID" ]]; then
+          echo "Failed to start export. Response:"
+          (echo "$CREATE_RES" | jq .) || echo "$CREATE_RES"
+          exit 1
+        fi
+
+        echo "Export started: uuid=${DEP_UUID} status=${STATUS}"
+        [[ -n "$URL" && "$URL" != "null" ]] && echo "Details URL: ${URL}"
+
+        START_TS=$(date +%s)
+        CUR_STATUS="$STATUS"
+        GET_RES=""
+
+        while true; do
+          GET_RES=$(curl -sS --fail-with-body --connect-timeout 10 --max-time 60 -X GET \
+            -H "appian-api-key: ${API_KEY}" \
+            "${BASE_URL%/}/suite/deployment-management/v2/deployments/${DEP_UUID}/" \
+            || true)
+
+          if [[ -z "${GET_RES:-}" ]]; then
+            echo "Empty response while polling. Will continue..."
+            CUR_STATUS="UNKNOWN"
+          else
+            CUR_STATUS=$(echo "$GET_RES" | jq -r '.status // "UNKNOWN"')
+          fi
+
+          echo "Status: $CUR_STATUS"
+
+          case "$CUR_STATUS" in
+            IN_PROGRESS|PENDING_REVIEW) ;;
+            *)
+              echo "Final status: $CUR_STATUS"
+              (echo "$GET_RES" | jq .) || echo "$GET_RES"
+              break
+              ;;
+          esac
+
+          NOW_TS=$(date +%s)
+          if (( NOW_TS - START_TS > POLL_TIMEOUT )); then
+            echo "Timeout waiting for export to finish (${POLL_TIMEOUT}s)" >&2
+            (echo "$GET_RES" | jq .) || echo "$GET_RES"
+            exit 1
+          fi
+          sleep "$POLL_INTERVAL"
+        done
+
+        # Optional downloads for package
+        if [[ "$EXPORT_TYPE" == "package" && "$DOWNLOAD_FILES" == "true" ]]; then
+          mkdir -p export-out
+          PKG_ZIP=$(echo "$GET_RES" | jq -r '.packageZip // empty')
+          [[ -n "$PKG_ZIP" && "$PKG_ZIP" != "null" ]] && {
+            echo "Downloading package zip..."
+            curl -sS --fail-with-body -H "appian-api-key: ${API_KEY}" -o "export-out/package.zip" "$PKG_ZIP" || true
+          }
+          PLUGINS_ZIP=$(echo "$GET_RES" | jq -r '.pluginsZip // empty')
+          [[ -n "$PLUGINS_ZIP" && "$PLUGINS_ZIP" != "null" ]] && {
+            echo "Downloading plugins zip..."
+            curl -sS --fail-with-body -H "appian-api-key: ${API_KEY}" -o "export-out/plugins.zip" "$PLUGINS_ZIP" || true
+          }
+          DB_COUNT=$(echo "$GET_RES" | jq -r '.databaseScripts | length // 0')
+          if (( DB_COUNT > 0 )); then
+            mkdir -p export-out/db-scripts
+            for i in $(seq 0 $((DB_COUNT-1))); do
+              URLI=$(echo "$GET_RES" | jq -r ".databaseScripts[$i].url // empty")
+              NAMEI=$(echo "$GET_RES" | jq -r ".databaseScripts[$i].fileName // \"db-${i}.sql\"")
+              if [[ -n "$URLI" && "$URLI" != "null" ]]; then
+                curl -sS --fail-with-body -H "appian-api-key: ${API_KEY}" -o "export-out/${NAMEI}" "$URLI" || true
+              fi
+            done
+          fi
+        fi
+
+        echo "::set-output name=status::$CUR_STATUS"
+
+    - name: Finish
+      id: finish
+      shell: bash
+      run: |
+        echo "status=${{ steps.run.outputs.status }}" >> "$GITHUB_OUTPUT"

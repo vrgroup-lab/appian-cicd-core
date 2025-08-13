@@ -63,9 +63,6 @@ jobs:
           role-qa:    ${{ env.ROLE_QA }}
           role-prod:  ${{ env.ROLE_PROD }}
 
-      - name: Ensure script perms
-        run: chmod +x scripts/appian_export.sh
-
       - name: Pick BASE_URL by env
         id: pick
         shell: bash
@@ -78,23 +75,18 @@ jobs:
           esac
 
       - name: Run export (with polling)
-        env:
-          APPIAN_API_KEY: ${{ steps.auth.outputs.api_key }}
-        run: |
-          OUT_DIR=""
-          if [[ "${{ inputs.download_artifacts }}" == "true" && "${{ inputs.export_type }}" == "package" ]]; then
-            OUT_DIR="--download-out ./export-out"
-          fi
-          ./scripts/appian_export.sh \
-            --base-url "${{ steps.pick.outputs.BASE_URL }}" \
-            --api-key "$APPIAN_API_KEY" \
-            --export-type "${{ inputs.export_type }}" \
-            --uuid "${{ inputs.uuid }}" \
-            --name "${{ inputs.name }}" \
-            --description "${{ inputs.description }}" \
-            --poll-timeout-sec 900 \
-            --poll-interval-sec 5 \
-            $OUT_DIR
+        id: export
+        uses: mtombolini-vrgroup/appian-cicd-core/.github/actions/appian-export@main
+        with:
+          base-url:       ${{ steps.pick.outputs.BASE_URL }}
+          api-key:        ${{ steps.auth.outputs.api_key }}
+          export-type:    ${{ inputs.export_type }}
+          uuid:           ${{ inputs.uuid }}
+          name:           ${{ inputs.name }}
+          description:    ${{ inputs.description }}
+          download-files: ${{ inputs.download_artifacts }}
+          poll-timeout:   "900"
+          poll-interval:  "5"
 
       - name: Upload artifacts (package)
         if: ${{ inputs.download_artifacts && inputs.export_type == 'package' }}
