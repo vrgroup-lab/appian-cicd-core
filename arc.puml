@@ -1,31 +1,48 @@
 @startuml
-skinparam defaultFontName Monospace
+' Layout & legibilidad
+left to right direction
 skinparam shadowing false
 
+skinparam defaultFontName Monospace
+skinparam linetype ortho
+
 node "GitHub" as GH {
-  node "Repo App 1" as GH1 {
-    artifact "deploy.yml (wrapper)" as D1
+  rectangle "Repos de Aplicación" as GH_APPS {
+    node "Repo App A" as GH_A {
+      artifact "deploy.yml (wrapper)" as D_A
+    }
+    GH_A -[hidden]down- RepoAppB
+    node "Repo App B" as RepoAppB {
+      artifact "deploy.yml (wrapper)" as D_B
+    }
+    RepoAppB -[hidden]down- RepoAppN
+    node "Repo App N" as RepoAppN {
+      artifact "deploy.yml (wrapper)" as D_N
+    }
   }
-  node "Repo App 2" as GH2 {
-    artifact "deploy.yml (wrapper)" as D2
-  }
-  node "Repo App n" as GHn {
-    artifact "deploy.yml (wrapper)" as Dn
-  }
-  node "Repo Core" as GHC {
-    artifact "export.yml / promote.yml / rollback.yml" as COREWF
+
+  node "Repo Core" as GH_CORE {
+    package "Workflows Core" as COREPKG {
+      artifact "export.yml"  as WF_EXPORT
+      artifact "promote.yml" as WF_PROMOTE
+      note bottom of WF_PROMOTE
+        Orquesta internamente inspect.yml e import.yml
+      end note
+    }
     artifact "CoreLib" as CORELIB
   }
+
+  GH_APPS -[hidden]- GH_CORE
 }
 
-cloud "AWS" as AWS {
+node "AWS" as AWS {
   node "IAM (OIDC / STS)" as IAM
   node "API Gateway" as APIGW
   node "Lambda (Secrets Broker)" as LMB
   database "Secrets Manager\nappian/{env}/*" as SM
 }
 
-cloud "Appian Cloud" as APPCLOUD {
+node "Appian Cloud" as APPCLOUD {
   node "Dev"  as DEV
   node "QA"   as QA
   node "Prod" as PROD
@@ -33,22 +50,33 @@ cloud "Appian Cloud" as APPCLOUD {
 }
 
 ' ==== Flujos ====
-D1 --> COREWF : workflow_call
-D2 --> COREWF
-Dn --> COREWF
-COREWF ..> CORELIB
+D_A --> COREPKG : workflow_call
+D_B --> COREPKG : workflow_call
+D_N --> COREPKG : workflow_call
+COREPKG ..> CORELIB : dependencia (reuse)
 
-COREWF --> IAM : AssumeRoleWithWebIdentity
-COREWF --> APIGW : HTTPS (signed/bearer)
+COREPKG --> IAM : AssumeRoleWithWebIdentity
+COREPKG --> APIGW : HTTPS (signed/bearer)
 APIGW --> LMB : invoke
 LMB --> SM : GetSecretValue
 SM --> LMB
 LMB --> APIGW
-APIGW --> COREWF : secrets (memoria)
+APIGW --> COREPKG : secrets (memoria)
 
-COREWF --> APIDEV2 : export/inspect/import/promote
+COREPKG --> APIDEV2 : export/inspect/import
 APIDEV2 --> DEV
 APIDEV2 --> QA
 APIDEV2 --> PROD
+
+' Título
+title **Arquitectura CI/CD Appian – Vista general**
+
+' Leyenda
+legend right
+  Rectángulos = Nodos/servicios
+  Artifact = Workflows YAML en GitHub
+  Cilindro = Secrets Manager
+  Flecha punteada = Dependencia
+endlegend
 
 @enduml

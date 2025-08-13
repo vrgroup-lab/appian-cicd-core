@@ -1,0 +1,48 @@
+name: Dev Secret OIDC Test
+on: workflow_dispatch
+
+permissions:
+  id-token: write   # Necesario para OIDC
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: us-east-1            # ajusta si tu secret está en otra región
+      SECRET_ID: appian/dev/api-key
+      ROLE_ARN: arn:aws:iam::292139251031:role/gh-actions-appian-dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Ensure jq is available
+        run: |
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update -y && sudo apt-get install -y jq
+          fi
+
+      - name: Read DEV secret (key/value)
+        id: read_secret
+        shell: bash
+        run: |
+          RAW=$(aws secretsmanager get-secret-value \
+            --secret-id "${SECRET_ID}" \
+            --query 'SecretString' --output text)
+          API_KEY=$(printf '%s' "$RAW" | jq -r '.["api-key"]')
+          echo "::add-mask::$API_KEY"
+          echo "APPIAN_API_KEY=$API_KEY" >> $GITHUB_ENV
+          echo "Secret leído (valor oculto)."
+
+      # Opcional: ping a tu Appian DEV (reemplaza la URL)
+      - name: Curl Appian (demo)
+        env:
+          BASE_URL: https://TU-DEV.appiancloud.com
+        run: |
+          curl -sS -H "Authorization: Bearer $APPIAN_API_KEY" \
+               "$BASE_URL/suite/webapi/health" || true

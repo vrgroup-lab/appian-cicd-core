@@ -1,0 +1,48 @@
+@startuml
+' Layout minimal
+left to right direction
+skinparam shadowing false
+skinparam defaultFontName Monospace
+skinparam linetype ortho
+
+' ===== Repositorio único orquestador =====
+node "GitHub\nRepo: appian-cicd-orchestrator" as GH {
+  package "Workflows" {
+    artifact "export.yml"  as WF_EXPORT
+    artifact "promote.yml" as WF_PROMOTE
+  }
+  database "GitHub Secrets" as GHSECRETS
+}
+
+' ===== Appian =====
+node "Appian Cloud" as APPCLOUD {
+  node "CICD Manager (Appian App)" as CICDM {
+    database "CICD Catalog (DB)" as CATALOG
+  }
+  component "Deployment API v2" as APIDEV2
+  node "Dev"  as DEV
+  node "QA"   as QA
+  node "Prod" as PROD
+}
+
+' ===== Flujos =====
+' Orquestador usa secretos para autenticarse contra Appian/CICD Manager
+GHSECRETS --> WF_EXPORT
+GHSECRETS --> WF_PROMOTE
+
+' Orquestador dispara acciones contra el CICD Manager
+WF_EXPORT  --> CICDM : trigger export
+WF_PROMOTE --> CICDM : trigger promote
+
+' CICD Manager consulta su catálogo/BD
+CICDM --> CATALOG
+
+' CICD Manager ejecuta operaciones en Appian
+CICDM --> APIDEV2 : export / inspect / import / promote
+
+' API v2 opera sobre entornos
+APIDEV2 --> DEV
+APIDEV2 --> QA
+APIDEV2 --> PROD
+
+@enduml

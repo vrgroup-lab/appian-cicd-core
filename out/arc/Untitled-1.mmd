@@ -1,0 +1,57 @@
+---
+config:
+  layout: fixed
+id: 547266ea-4718-42da-9602-bc5d2634ac5b
+---
+flowchart LR
+ subgraph GH_A["Repo App A"]
+        D_A["deploy.yml (wrapper)"]
+  end
+ subgraph RepoAppB["Repo App B"]
+        D_B["deploy.yml (wrapper)"]
+  end
+ subgraph RepoAppN["Repo App N"]
+        D_N["deploy.yml (wrapper)"]
+  end
+ subgraph GH_APPS["Repos de Aplicación"]
+        GH_A
+        RepoAppB
+        RepoAppN
+  end
+ subgraph COREPKG["Workflows Core"]
+        WF_EXPORT["export.yml"]
+        WF_PROMOTE["promote.yml"]
+  end
+ subgraph GH_CORE["Repo Core"]
+        COREPKG
+        CORELIB["CoreLib"]
+  end
+ subgraph GH["GitHub"]
+        GH_APPS
+        GH_CORE
+  end
+ subgraph AWS["AWS"]
+        IAM["IAM (OIDC / STS)"]
+        APIGW["API Gateway"]
+        LMB["Lambda (Secrets Broker)"]
+        SM["Secrets Manager appian/{env}/*"]
+  end
+ subgraph APPCLOUD["Appian Cloud"]
+        APIDEV2["Deployment APIs v2"]
+        DEV["Dev"]
+        QA["QA"]
+        PROD["Prod"]
+  end
+    D_A -- workflow_call --> COREPKG
+    D_B -- workflow_call --> COREPKG
+    D_N -- workflow_call --> COREPKG
+    COREPKG -- dependencia / reuse --> CORELIB
+    COREPKG -- AssumeRoleWithWebIdentity --> IAM
+    COREPKG -- HTTPS signed/bearer --> APIGW
+    APIGW -- invoke --> LMB
+    LMB -- GetSecretValue --> SM
+    SM --> LMB
+    LMB --> APIGW
+    APIGW -- secrets (memoria) --> COREPKG
+    COREPKG -- export/inspect/import --> APIDEV2
+    APIDEV2 --> DEV & QA & PROD
