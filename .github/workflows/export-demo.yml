@@ -1,5 +1,11 @@
 name: Appian Export Demo (core)
 on:
+  workflow_call:
+    inputs:
+      env:
+        type: string
+        required: true
+        description: "dev|qa|prod"
   workflow_dispatch:
     inputs:
       env:
