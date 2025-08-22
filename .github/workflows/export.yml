@@ -5,7 +5,8 @@ on:
     inputs:
       base-url:       { required: true, type: string }
       export-type:    { required: true, type: string }
-      uuid:           { required: true, type: string }
+      app-uuid:       { required: true, type: string }
+      package-name:   { required: false, type: string }
       name:           { required: false, type: string }
       description:    { required: false, type: string }
       poll-timeout-sec: { required: false, type: number }
@@ -19,13 +20,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Resolve package uuid
+        id: pkg
+        if: ${{ inputs.export-type == 'package' }}
+        uses: ./.github/actions/resolve-package
+        with:
+          base-url: ${{ inputs.base-url }}
+          api-key: ${{ secrets.APPIAN_API_KEY }}
+          app-uuid: ${{ inputs['app-uuid'] }}
+          package-name: ${{ inputs['package-name'] }}
       - name: Export from Appian
         uses: ./.github/actions/export
         with:
           base-url: ${{ inputs.base-url }}
           api-key: ${{ secrets.APPIAN_API_KEY }}
           export-type: ${{ inputs.export-type }}
-          uuid: ${{ inputs.uuid }}
+          uuid: ${{ inputs.export-type == 'package' && steps.pkg.outputs['package-uuid'] || inputs['app-uuid'] }}
           name: ${{ inputs.name }}
           description: ${{ inputs.description }}
           poll-timeout-sec: ${{ inputs.poll-timeout-sec }}

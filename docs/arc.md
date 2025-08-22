@@ -15,7 +15,7 @@
 El diagrama ilustra la interacción entre los principales componentes de la arquitectura:
 
 - **GitHub:** Plataforma central que aloja tanto los repositorios de las aplicaciones como el repositorio Core con los workflows compartidos.
-- **Repo Core:** Almacena y gestiona los workflows centrales que orquestan los despliegues y procesos CI/CD de las aplicaciones Appian, garantizando consistencia y reutilización.
+- **Repo Core:** Almacena y gestiona los workflows centrales que orquestan los despliegues y procesos CI/CD de las aplicaciones Appian, garantizando consistencia y reutilización. Si se solicita exportar un **package**, el Core resuelve dinámicamente el UID del paquete partiendo del UID de la aplicación, evitando hardcodear identificadores.
 - **Appian Cloud:** Entornos de origen y destino (Dev, QA, Prod) donde se exportan e importan las aplicaciones Appian.
 
 ---
