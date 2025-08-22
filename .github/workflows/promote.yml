@@ -24,28 +24,6 @@ jobs:
           poll-timeout-sec: ${{ inputs['poll-timeout-sec'] }}
           poll-interval-sec: ${{ inputs['poll-interval-sec'] }}
 
-      - name: Validate inputs
-        shell: bash
-        run: |
-          set -euo pipefail
-          [[ -f "${{ inputs.manifest_path }}" ]] || { echo "Manifest not found: ${{ inputs.manifest_path }}"; exit 1; }
-          if [[ "${{ inputs.export_scope }}" == "package" && -z "${{ inputs.package_name }}" ]]; then
-            echo "package_name is required when export_scope=package"; exit 1;
-          fi
-
-      - name: Wire check (promote)
-        env:
-          URL: ${{ inputs.appian_url }}
-          PUBLIC_JSON: ${{ inputs.app_props_public_json }}
-        run: |
-          echo "[core/promote] ENV=${{ inputs.target_env }}"
-          echo "[core/promote] MANIFEST=${{ inputs.manifest_path }}"
-          echo "[core/promote] SCOPE=${{ inputs.export_scope }}"
-          echo "[core/promote] PACKAGE=${{ inputs.package_name }}"
-          echo "[core/promote] URL=${URL}"
-          echo "[core/promote] PUBLIC_JSON length=${#PUBLIC_JSON}"
-          echo "[core/promote] Secrets wired (API_KEY + SENSITIVE_JSON)"
-
       # (opcional) Smoke ping sin exponer valores
       # - name: Smoke ping deployments (optional)
       #   env:
