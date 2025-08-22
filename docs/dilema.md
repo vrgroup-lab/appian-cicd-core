@@ -84,7 +84,7 @@ Razones:
 ---
 
 ## Lineamientos concretos (si elegimos A)
-- **Core**: workflows reutilizables (`export.yml`, `promote.yml`, `rollback.yml`), versionados por tags `v1.0.x` + alias `v1`.
+- **Core**: workflows reutilizables (`export.yml`, `promote.yml`), versionados por tags `v1.0.x` + alias `v1`.
 - **Repos de app**: `deploy.yml` (wrapper) + `config/appian.json` + Environments `dev/qa/prod` con:
   - Variables: `APPIAN_URL`, `APP_PROPS_PUBLIC_JSON`
   - Secrets: `APPIAN_API_KEY`, `APP_PROPS_SENSITIVE_JSON`

@@ -1,9 +1,0 @@
-name: echo-check
-description: "Demo composite action"
-inputs:
-  message: { required: true }
-runs:
-  using: "composite"
-  steps:
-    - shell: bash
-      run: echo "[echo-check] ${{ inputs.message }}"

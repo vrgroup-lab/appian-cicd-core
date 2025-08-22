@@ -1,24 +1,28 @@
-name: Promote (Reusable)
+name: Promote
 
 on:
   workflow_call:
     inputs:
-      target_env:               { required: true, type: string }            # qa | prod (el job ya se corre con ese environment)
-      manifest_path:            { required: true, type: string }
-      export_scope:             { required: true, type: string }            # "app" | "package"
-      package_name:             { required: false, type: string }           # requerido si export_scope=="package"
-      appian_url:               { required: true, type: string }
-      app_props_public_json:    { required: true, type: string }
+      base-url:       { required: true, type: string }
+      package-path:   { required: true, type: string }
+      poll-timeout-sec: { required: false, type: number }
+      poll-interval-sec: { required: false, type: number }
     secrets:
-      APPIAN_API_KEY:           { required: true }
-      APP_PROPS_SENSITIVE_JSON: { required: true }
+      APPIAN_API_KEY: { required: true }
 
 jobs:
   promote:
     runs-on: ubuntu-latest
-    environment: ${{ inputs.target_env }}
     steps:
       - uses: actions/checkout@v4
+      - name: Promote package to Appian
+        uses: ./.github/actions/promote
+        with:
+          base-url: ${{ inputs.base-url }}
+          api-key: ${{ secrets.APPIAN_API_KEY }}
+          package-path: ${{ inputs.package-path }}
+          poll-timeout-sec: ${{ inputs['poll-timeout-sec'] }}
+          poll-interval-sec: ${{ inputs['poll-interval-sec'] }}
 
       - name: Validate inputs
         shell: bash

@@ -1,8 +1,6 @@
 @startuml
-' Layout & legibilidad
 left to right direction
 skinparam shadowing false
-
 skinparam defaultFontName Monospace
 skinparam linetype ortho
 
@@ -25,21 +23,11 @@ node "GitHub" as GH {
     package "Workflows Core" as COREPKG {
       artifact "export.yml"  as WF_EXPORT
       artifact "promote.yml" as WF_PROMOTE
-      note bottom of WF_PROMOTE
-        Orquesta internamente inspect.yml e import.yml
-      end note
     }
     artifact "CoreLib" as CORELIB
   }
 
   GH_APPS -[hidden]- GH_CORE
-}
-
-node "AWS" as AWS {
-  node "IAM (OIDC / STS)" as IAM
-  node "API Gateway" as APIGW
-  node "Lambda (Secrets Broker)" as LMB
-  database "Secrets Manager\nappian/{env}/*" as SM
 }
 
 node "Appian Cloud" as APPCLOUD {
@@ -54,28 +42,16 @@ D_A --> COREPKG : workflow_call
 D_B --> COREPKG : workflow_call
 D_N --> COREPKG : workflow_call
 COREPKG ..> CORELIB : dependencia (reuse)
-
-COREPKG --> IAM : AssumeRoleWithWebIdentity
-COREPKG --> APIGW : HTTPS (signed/bearer)
-APIGW --> LMB : invoke
-LMB --> SM : GetSecretValue
-SM --> LMB
-LMB --> APIGW
-APIGW --> COREPKG : secrets (memoria)
-
-COREPKG --> APIDEV2 : export/inspect/import
+COREPKG --> APIDEV2 : export/import
 APIDEV2 --> DEV
 APIDEV2 --> QA
 APIDEV2 --> PROD
 
-' Título
 title **Arquitectura CI/CD Appian – Vista general**
 
-' Leyenda
 legend right
   Rectángulos = Nodos/servicios
   Artifact = Workflows YAML en GitHub
-  Cilindro = Secrets Manager
   Flecha punteada = Dependencia
 endlegend
 
