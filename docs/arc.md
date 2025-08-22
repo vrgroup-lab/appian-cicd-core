@@ -1,8 +1,8 @@
 # Arquitectura CI/CD para Apps Appian
 
-> **Resumen:** Orquestamos despliegues de múltiples aplicaciones Appian desde GitHub.  
-> Cada aplicación tiene su **repo propio** (basado en **template**), que invoca **workflows core** alojados en un **Repo Core**.  
-> En **Fase 1** operamos solo con GitHub (sin AWS). En **Fase 2** integramos **AWS Secrets Manager** (vía OIDC) para credenciales seguras.
+> **Resumen:** Orquestamos despliegues de múltiples aplicaciones Appian desde GitHub.
+> Cada aplicación tiene su **repo propio** (basado en **template**), que invoca **workflows core** alojados en este **Repo Core**.
+> Los secretos (API keys) se administran a nivel de organización en GitHub.
 
 ---
 
@@ -14,10 +14,9 @@
 
 El diagrama ilustra la interacción entre los principales componentes de la arquitectura:
 
-- **GitHub:** Plataforma central que aloja tanto los repositorios de las aplicaciones como el repositorio Core, el cual contiene los workflows compartidos.
+- **GitHub:** Plataforma central que aloja tanto los repositorios de las aplicaciones como el repositorio Core con los workflows compartidos.
 - **Repo Core:** Almacena y gestiona los workflows centrales que orquestan los despliegues y procesos CI/CD de las aplicaciones Appian, garantizando consistencia y reutilización.
-- **AWS:** Incorporado en la Fase 2, integra AWS Secrets Manager mediante OIDC para almacenar y recuperar de forma segura las credenciales (API keys) en una bóveda centralizada.
-- **Appian Cloud:** Entornos de origen y destino (Dev, QA, Prod) donde se exportan, inspeccionan y despliegan las aplicaciones Appian.
+- **Appian Cloud:** Entornos de origen y destino (Dev, QA, Prod) donde se exportan e importan las aplicaciones Appian.
 
 ---
 
