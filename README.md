@@ -21,7 +21,7 @@ jobs:
   export:
     uses: OWNER/appian-cicd-core/.github/workflows/export.yml@main
     with:
-      base-url: https://example.appiancloud.com
+      source-env: dev
       export-type: application # o package
       uuid: 00000000-0000-0000-0000-000000000000
     secrets:
@@ -38,10 +38,19 @@ jobs:
   promote:
     uses: OWNER/appian-cicd-core/.github/workflows/promote.yml@main
     with:
-      base-url: https://example.appiancloud.com
+      target-env: prod
       package-path: path/al/paquete.zip
     secrets:
       APPIAN_API_KEY: ${{ secrets.APPIAN_API_KEY }}
 ```
 
 Parámetros opcionales: `poll-timeout-sec`, `poll-interval-sec`.
+
+## Configuración de entornos
+
+Las URLs base de cada entorno se definen como variables de entorno en este
+repositorio con el formato `APPIAN_<ENTORNO>_URL` (por ejemplo,
+`APPIAN_DEV_URL`, `APPIAN_PROD_URL`).
+
+Los workflows reciben el nombre del entorno (`source-env` o `target-env`) y
+resuelven internamente la URL correspondiente usando estas variables.

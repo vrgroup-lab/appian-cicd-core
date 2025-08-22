@@ -3,7 +3,7 @@ name: Promote
 on:
   workflow_call:
     inputs:
-      base-url:       { required: true, type: string }
+      target-env:     { required: true, type: string }
       package-path:   { required: true, type: string }
       poll-timeout-sec: { required: false, type: number }
       poll-interval-sec: { required: false, type: number }
@@ -15,10 +15,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Resolve target URL
+        id: resolve
+        run: |
+          echo "url=$(./scripts/resolve_env_url.sh '${{ inputs.target-env }}')" >> "$GITHUB_OUTPUT"
       - name: Promote package to Appian
         uses: ./.github/actions/promote
         with:
-          base-url: ${{ inputs.base-url }}
+          base-url: ${{ steps.resolve.outputs.url }}
           api-key: ${{ secrets.APPIAN_API_KEY }}
           package-path: ${{ inputs.package-path }}
           poll-timeout-sec: ${{ inputs['poll-timeout-sec'] }}
