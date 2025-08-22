@@ -1,42 +1,34 @@
-name: Export (Reusable)
-
+name: Export
 
 on:
   workflow_call:
     inputs:
-      manifest_path:            { required: true, type: string }
-      export_scope:             { required: true, type: string }   # "app" | "package"
-      package_name:             { required: false, type: string }  # requerido si export_scope=="package"
-      appian_url:               { required: true, type: string }   # viene del repo app (variable)
-      app_props_public_json:    { required: true, type: string }   # viene del repo app (variable)
+      base-url:       { required: true, type: string }
+      export-type:    { required: true, type: string }
+      uuid:           { required: true, type: string }
+      name:           { required: false, type: string }
+      description:    { required: false, type: string }
+      poll-timeout-sec: { required: false, type: number }
+      poll-interval-sec: { required: false, type: number }
+      download-out:   { required: false, type: string }
     secrets:
-      APPIAN_API_KEY:           { required: true }                 # viene del repo app (secret)
-      APP_PROPS_SENSITIVE_JSON: { required: true }                 # viene del repo app (secret)
+      APPIAN_API_KEY: { required: true }
 
 jobs:
   export:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Export from Appian
+        uses: ./.github/actions/export
+        with:
+          base-url: ${{ inputs.base-url }}
+          api-key: ${{ secrets.APPIAN_API_KEY }}
+          export-type: ${{ inputs.export-type }}
+          uuid: ${{ inputs.uuid }}
+          name: ${{ inputs.name }}
+          description: ${{ inputs.description }}
+          poll-timeout-sec: ${{ inputs.poll-timeout-sec }}
+          poll-interval-sec: ${{ inputs['poll-interval-sec'] }}
+          download-out: ${{ inputs['download-out'] }}
 
-      # Validaciones mínimas (sin lógica real aún)
-      - name: Validate inputs
-        shell: bash
-        run: |
-          set -euo pipefail
-          [[ -f "${{ inputs.manifest_path }}" ]] || { echo "Manifest not found: ${{ inputs.manifest_path }}"; exit 1; }
-          if [[ "${{ inputs.export_scope }}" == "package" && -z "${{ inputs.package_name }}" ]]; then
-            echo "package_name is required when export_scope=package"; exit 1;
-          fi
-
-      - name: Wire check (export)
-        env:
-          URL: ${{ inputs.appian_url }}
-          PUBLIC_JSON: ${{ inputs.app_props_public_json }}
-        run: |
-          echo "[core/export] MANIFEST=${{ inputs.manifest_path }}"
-          echo "[core/export] SCOPE=${{ inputs.export_scope }}"
-          echo "[core/export] PACKAGE=${{ inputs.package_name }}"
-          echo "[core/export] URL=${URL}"
-          echo "[core/export] PUBLIC_JSON length=${#PUBLIC_JSON}"
-          echo "[core/export] Secrets wired (API_KEY + SENSITIVE_JSON)"
