@@ -3,7 +3,7 @@ name: Export
 on:
   workflow_call:
     inputs:
-      base-url:       { required: true, type: string }
+      source-env:     { required: true, type: string }
       export-type:    { required: true, type: string }
       uuid:           { required: true, type: string }
       name:           { required: false, type: string }
@@ -19,10 +19,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Resolve source URL
+        id: resolve
+        run: |
+          echo "url=$(./scripts/resolve_env_url.sh '${{ inputs.source-env }}')" >> "$GITHUB_OUTPUT"
       - name: Export from Appian
         uses: ./.github/actions/export
         with:
-          base-url: ${{ inputs.base-url }}
+          base-url: ${{ steps.resolve.outputs.url }}
           api-key: ${{ secrets.APPIAN_API_KEY }}
           export-type: ${{ inputs.export-type }}
           uuid: ${{ inputs.uuid }}
