@@ -1,14 +1,16 @@
-name: Export (Reusable)
-
+name: Export
 
 on:
   workflow_call:
     inputs:
-      manifest_path:            { required: true, type: string }
-      export_scope:             { required: true, type: string }   # "app" | "package"
-      package_name:             { required: false, type: string }  # requerido si export_scope=="package"
-      appian_url:               { required: true, type: string }   # viene del repo app (variable)
-      app_props_public_json:    { required: true, type: string }   # viene del repo app (variable)
+      base-url:       { required: true, type: string }
+      export-type:    { required: true, type: string }
+      uuid:           { required: true, type: string }
+      name:           { required: false, type: string }
+      description:    { required: false, type: string }
+      poll-timeout-sec: { required: false, type: number }
+      poll-interval-sec: { required: false, type: number }
+      download-out:   { required: false, type: string }
     secrets:
       APPIAN_API_KEY: { required: true }
 
