@@ -1,0 +1,58 @@
+name: appian-resolve-package
+description: Resuelve el UUID de un paquete por nombre dentro de una app usando Appian Deployment Management v2
+
+inputs:
+  app_uuid:
+    description: UUID de la aplicación
+    required: true
+  package_name:
+    description: Nombre del paquete a buscar
+    required: true
+  env_name:
+    description: Entorno (dev|qa|prod|demo)
+    required: true
+
+outputs:
+  package_uuid:
+    description: UUID del paquete resuelto
+    value: ${{ steps.run.outputs.package_uuid }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolver APPIAN_BASE_URL desde config del Core
+      shell: bash
+      run: |
+        set -euo pipefail
+        file="${{ github.action_path }}/../_config/appian_base_urls.env"
+        env_lc='${{ inputs.env_name }}'; env_lc="${env_lc,,}"
+        case "$env_lc" in
+          dev)   val=$(grep -E '^DEV='  "$file" | sed 's/^DEV=//') ;;
+          qa)    val=$(grep -E '^QA='   "$file" | sed 's/^QA=//') ;;
+          prod)  val=$(grep -E '^PROD=' "$file" | sed 's/^PROD=//') ;;
+          demo)  val=$(grep -E '^DEMO=' "$file" | sed 's/^DEMO=//') ;;
+          *) echo "::error::env_name inválido: $env_lc"; exit 1 ;;
+        esac
+        echo "APPIAN_BASE_URL=$val" >> "$GITHUB_ENV"
+        if [ -z "${val:-}" ]; then
+          echo "::error::APPIAN_BASE_URL vacío para '$env_lc'"; exit 1
+        fi
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+    - id: run
+      shell: bash
+      env:
+        APPIAN_API_KEY: ${{ env.APPIAN_API_KEY }}
+        APPIAN_BASE_URL: ${{ env.APPIAN_BASE_URL }}
+      run: |
+        set -euo pipefail
+        echo "::add-mask::${APPIAN_API_KEY:-}"
+        python "${{ github.action_path }}/appian_cli.py" resolve \
+          --base-url "$APPIAN_BASE_URL" \
+          --api-key "$APPIAN_API_KEY" \
+          --app-uuid "${{ inputs.app_uuid }}" \
+          --package-name "${{ inputs.package_name }}" | tee out.txt
+        uuid=$(cat out.txt)
+        echo "package_uuid=$uuid" >> "$GITHUB_OUTPUT"

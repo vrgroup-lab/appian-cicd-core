@@ -1,38 +1,205 @@
-name: Export
+name: Export Appian Package (reusable)
 
 on:
   workflow_call:
     inputs:
-      source-env:     { required: true, type: string }
-      export-type:    { required: true, type: string }
-      uuid:           { required: true, type: string }
-      name:           { required: false, type: string }
-      description:    { required: false, type: string }
-      poll-timeout-sec: { required: false, type: number }
-      poll-interval-sec: { required: false, type: number }
-      download-out:   { required: false, type: string }
-    secrets:
-      APPIAN_API_KEY: { required: true }
+      env:
+        description: "Entorno Appian (dev|qa|prod|demo)"
+        required: true
+        type: string
+      deploy_kind:
+        description: "Tipo de despliegue (app|package)"
+        required: true
+        type: string
+      app_uuid:
+        description: "UUID de la aplicación origen"
+        required: true
+        type: string
+      package_name:
+        description: "Nombre del paquete (para resolver UUID si no se entrega)"
+        required: false
+        type: string
+      dry_run:
+        description: "No llama API reales; genera artefacto simulado"
+        required: false
+        default: false
+        type: boolean
+    outputs:
+      artifact_path:
+        description: "Ruta del artefacto exportado"
+        value: ${{ jobs.export.outputs.artifact_path }}
+      artifact_name:
+        description: "Nombre del artifact subido (para descargar en promote)"
+        value: ${{ jobs.export.outputs.artifact_name }}
+      artifact_dir:
+        description: "Carpeta base donde se descargaron los recursos"
+        value: ${{ jobs.export.outputs.artifact_dir }}
+      database_scripts:
+        description: "JSON con scripts de base de datos descargados (puede ser [] si no hay)"
+        value: ${{ jobs.export.outputs.database_scripts }}
+      plugins_zip:
+        description: "Ruta al ZIP de plugins exportado, si existe"
+        value: ${{ jobs.export.outputs.plugins_zip }}
+      customization_file:
+        description: "Ruta al customization file exportado, si existe"
+        value: ${{ jobs.export.outputs.customization_file }}
+      customization_template:
+        description: "Ruta al template de customization exportado, si existe"
+        value: ${{ jobs.export.outputs.customization_template }}
+      downloaded_files:
+        description: "JSON con todas las rutas descargadas (incluye el ZIP principal)"
+        value: ${{ jobs.export.outputs.downloaded_files }}
+      deployment_uuid:
+        description: "UUID del deployment de exportación en Appian"
+        value: ${{ jobs.export.outputs.deployment_uuid }}
+      deployment_status:
+        description: "Estado terminal informado por Appian para la exportación"
+        value: ${{ jobs.export.outputs.deployment_status }}
+      raw_response:
+        description: "JSON completo devuelto por Appian al finalizar la exportación"
+        value: ${{ jobs.export.outputs.raw_response }}
+
+permissions:
+  contents: read
+  actions: write
 
 jobs:
   export:
+    name: Export package
     runs-on: ubuntu-latest
+    outputs:
+      artifact_path: ${{ steps.export.outputs.artifact_path }}
+      artifact_name: ${{ steps.meta.outputs.artifact_name }}
+      artifact_dir: ${{ steps.export.outputs.artifact_dir }}
+      database_scripts: ${{ steps.export.outputs.database_scripts }}
+      plugins_zip: ${{ steps.export.outputs.plugins_zip }}
+      customization_file: ${{ steps.export.outputs.customization_file }}
+      customization_template: ${{ steps.export.outputs.customization_template }}
+      downloaded_files: ${{ steps.export.outputs.downloaded_files }}
+      deployment_uuid: ${{ steps.export.outputs.deployment_uuid }}
+      deployment_status: ${{ steps.export.outputs.deployment_status }}
+      raw_response: ${{ steps.export.outputs.raw_response }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Resolve source URL
+      - name: Resolver API key por entorno
         id: resolve
+        shell: bash
         run: |
-          echo "url=$(./scripts/resolve_env_url.sh '${{ inputs.source-env }}')" >> "$GITHUB_OUTPUT"
-      - name: Export from Appian
-        uses: ./.github/actions/export
-        with:
-          base-url: ${{ steps.resolve.outputs.url }}
-          api-key: ${{ secrets.APPIAN_API_KEY }}
-          export-type: ${{ inputs.export-type }}
-          uuid: ${{ inputs.uuid }}
-          name: ${{ inputs.name }}
-          description: ${{ inputs.description }}
-          poll-timeout-sec: ${{ inputs.poll-timeout-sec }}
-          poll-interval-sec: ${{ inputs['poll-interval-sec'] }}
-          download-out: ${{ inputs['download-out'] }}
+          set -euo pipefail
+          env_in="${{ inputs.env }}"; env_lc="${{ inputs.env }}"; env_lc="${env_lc,,}"
+          case "$env_lc" in
+            dev)
+              echo "APPIAN_API_KEY=${{ secrets.APPIAN_DEV_API_KEY }}" >> "$GITHUB_ENV" ;;
+            qa)
+              echo "APPIAN_API_KEY=${{ secrets.APPIAN_QA_API_KEY }}" >> "$GITHUB_ENV" ;;
+            prod)
+              echo "APPIAN_API_KEY=${{ secrets.APPIAN_PROD_API_KEY }}" >> "$GITHUB_ENV" ;;
+            demo)
+              echo "APPIAN_API_KEY=${{ secrets.APPIAN_DEMO_API_KEY }}" >> "$GITHUB_ENV" ;;
+            *)
+              echo "::error::Entorno no soportado: $env_in (use dev|qa|prod|demo)"; exit 1 ;;
+          esac
+          echo "APPIAN_ENV=$env_in" >> "$GITHUB_ENV"
 
+      # Nota: APPIAN_BASE_URL se resuelve dentro de la composite action utilizando
+      # un archivo de configuración versionado en el Core.
+
+      - name: Resolver recurso a exportar
+        id: res
+        shell: bash
+        run: |
+          set -euo pipefail
+          kind="${{ inputs.deploy_kind }}"; kind_lc="${{ inputs.deploy_kind }}"; kind_lc="${kind_lc,,}"
+          case "$kind_lc" in
+            app)
+              echo "kind=app" >> "$GITHUB_OUTPUT"
+              echo "id=${{ inputs.app_uuid }}" >> "$GITHUB_OUTPUT" ;;
+            package)
+              echo "kind=package" >> "$GITHUB_OUTPUT"
+              echo "need_resolve=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::deploy_kind inválido: $kind (use app|package)"; exit 1 ;;
+          esac
+
+      - name: Resolver package UUID por nombre (MVP)
+        id: pkg
+        if: ${{ steps.res.outputs.kind == 'package' && steps.res.outputs.need_resolve == 'true' }}
+        uses: bice-vida/appian-cicd-core/.github/actions/appian-resolve-package@develop
+        with:
+          env_name: ${{ inputs.env }}
+          app_uuid: ${{ inputs.app_uuid }}
+          package_name: ${{ inputs.package_name }}
+
+      - name: Resolver ID final
+        id: rid
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${{ steps.res.outputs.id }}" ]; then
+            echo "id=${{ steps.res.outputs.id }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "id=${{ steps.pkg.outputs.package_uuid }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Exportar recurso (MVP)
+        id: export
+        uses: bice-vida/appian-cicd-core/.github/actions/appian-export@develop
+        with:
+          env_name: ${{ inputs.env }}
+          resource_kind: ${{ steps.res.outputs.kind }}
+          resource_id: ${{ steps.rid.outputs.id }}
+          display_name: ${{ inputs.package_name }}
+          dry_run: ${{ inputs.dry_run }}
+
+      - name: Definir nombre de artifact
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Nombre estable que funciona tanto para app como package
+          nm_part='${{ inputs.package_name }}'
+          if [ -z "$nm_part" ]; then nm_part='${{ steps.rid.outputs.id }}'; fi
+          name="appian-${{ inputs.deploy_kind }}-${{ inputs.app_uuid }}-${nm_part}-${{ github.run_id }}"
+          echo "artifact_name=$name" >> "$GITHUB_OUTPUT"
+
+      - name: Subir paquete exportado (ZIP)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.meta.outputs.artifact_name }}
+          path: ${{ steps.export.outputs.artifact_path }}
+          if-no-files-found: error
+          retention-days: 5
+
+      - name: Subir scripts de base de datos
+        if: ${{ steps.export.outputs.database_scripts != '[]' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.meta.outputs.artifact_name }}-db-scripts
+          path: ${{ steps.export.outputs.artifact_dir }}/db-scripts
+          if-no-files-found: error
+          retention-days: 5
+
+      - name: Subir customization file
+        if: ${{ steps.export.outputs.customization_file != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.meta.outputs.artifact_name }}-customization
+          path: ${{ steps.export.outputs.customization_file }}
+          if-no-files-found: error
+          retention-days: 5
+
+      - name: Subir customization template
+        if: ${{ steps.export.outputs.customization_template != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.meta.outputs.artifact_name }}-customization-template
+          path: ${{ steps.export.outputs.customization_template }}
+          if-no-files-found: error
+          retention-days: 5
+
+      - name: Subir plugins ZIP
+        if: ${{ steps.export.outputs.plugins_zip != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.meta.outputs.artifact_name }}-plugins
+          path: ${{ steps.export.outputs.plugins_zip }}
+          if-no-files-found: error
+          retention-days: 5

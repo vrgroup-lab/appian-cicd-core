@@ -1,40 +1,73 @@
-name: Promote
+name: Promote Appian Package (reusable)
 
 on:
   workflow_call:
     inputs:
-      target-env:     { required: true, type: string }
-      package-path:   { required: true, type: string }
-      poll-timeout-sec: { required: false, type: number }
-      poll-interval-sec: { required: false, type: number }
-    secrets:
-      APPIAN_API_KEY: { required: true }
+      source_env:
+        description: "Origen (dev|qa|demo)"
+        required: true
+        type: string
+      target_env:
+        description: "Destino (qa|prod|demo)"
+        required: true
+        type: string
+      artifact_name:
+        description: "Nombre del artifact a descargar"
+        required: true
+        type: string
+      dry_run:
+        description: "No llama API reales; simula import"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  actions: read
 
 jobs:
   promote:
+    name: Promote package
     runs-on: ubuntu-latest
+    environment: ${{ inputs.target_env }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Resolve target URL
-        id: resolve
+      - name: Resolver API key (target)
+        shell: bash
         run: |
-          echo "url=$(./scripts/resolve_env_url.sh '${{ inputs.target-env }}')" >> "$GITHUB_OUTPUT"
-      - name: Promote package to Appian
-        uses: ./.github/actions/promote
-        with:
-          base-url: ${{ steps.resolve.outputs.url }}
-          api-key: ${{ secrets.APPIAN_API_KEY }}
-          package-path: ${{ inputs.package-path }}
-          poll-timeout-sec: ${{ inputs['poll-timeout-sec'] }}
-          poll-interval-sec: ${{ inputs['poll-interval-sec'] }}
+          set -euo pipefail
+          tgt="${{ inputs.target_env }}"; tgt_lc="${{ inputs.target_env }}"; tgt_lc="${tgt_lc,,}"
+          case "$tgt_lc" in
+            dev)  echo "APPIAN_API_KEY_TARGET=${{ secrets.APPIAN_DEV_API_KEY }}" >> "$GITHUB_ENV" ;;
+            qa)   echo "APPIAN_API_KEY_TARGET=${{ secrets.APPIAN_QA_API_KEY }}" >> "$GITHUB_ENV" ;;
+            prod) echo "APPIAN_API_KEY_TARGET=${{ secrets.APPIAN_PROD_API_KEY }}" >> "$GITHUB_ENV" ;;
+            demo) echo "APPIAN_API_KEY_TARGET=${{ secrets.APPIAN_DEMO_API_KEY }}" >> "$GITHUB_ENV" ;;
+            *) echo "::error::Entorno target no soportado: $tgt"; exit 1 ;;
+          esac
+          echo "APPIAN_TARGET_ENV=$tgt" >> "$GITHUB_ENV"
 
-      # (opcional) Smoke ping sin exponer valores
-      # - name: Smoke ping deployments (optional)
-      #   env:
-      #     URL: ${{ inputs.appian_url }}
-      #     KEY: ${{ secrets.APPIAN_API_KEY }}
-      #   run: |
-      #     set -e
-      #     CODE=$(curl -sS -o /dev/null -w "%{http_code}" \
-      #       -H "appian-api-key: $KEY" "$URL/suite/deployment/v1/deployments")
-      #     echo "HTTP $CODE (expected 200/401/403)"
+      - name: Descargar artifact por nombre
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: downloaded
+
+      - name: Resolver ruta del paquete
+        id: resolve_pkg
+        shell: bash
+        run: |
+          set -euo pipefail
+          found=$(find downloaded -type f -name '*.zip' -print -quit)
+          if [[ -z "$found" ]]; then
+            echo "::error::No se pudo resolver 'package_path' a partir del artifact descargado. Verifique 'artifact_name'."
+            exit 1
+          fi
+          echo "path=$found" >> "$GITHUB_OUTPUT"
+
+      - name: Promover paquete
+        uses: bice-vida/appian-cicd-core/.github/actions/appian-promote@develop
+        with:
+          source_env: ${{ inputs.source_env }}
+          target_env: ${{ inputs.target_env }}
+          package_path: ${{ steps.resolve_pkg.outputs.path }}
+          dry_run: ${{ inputs.dry_run }}
+

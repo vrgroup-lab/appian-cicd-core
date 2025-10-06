@@ -1,0 +1,86 @@
+name: appian-promote
+description: Orquesta la inspección e importación de un paquete Appian
+
+inputs:
+  source_env:
+    description: Entorno origen (para logging)
+    required: true
+  target_env:
+    description: Entorno destino (para logging)
+    required: true
+  package_path:
+    description: Ruta del paquete a importar (zip)
+    required: true
+  dry_run:
+    description: Si es true, no llama APIs y simula import
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Resolver APPIAN_BASE_URL desde config del Core
+      shell: bash
+      run: |
+        set -euo pipefail
+        file="${{ github.action_path }}/../_config/appian_base_urls.env"
+        env_lc='${{ inputs.target_env }}'; env_lc="${env_lc,,}"
+        case "$env_lc" in
+          dev)   val=$(grep -E '^DEV='  "$file" | sed 's/^DEV=//') ;;
+          qa)    val=$(grep -E '^QA='   "$file" | sed 's/^QA=//') ;;
+          prod)  val=$(grep -E '^PROD=' "$file" | sed 's/^PROD=//') ;;
+          demo)  val=$(grep -E '^DEMO=' "$file" | sed 's/^DEMO=//') ;;
+          *) echo "::error::target_env inválido: $env_lc"; exit 1 ;;
+        esac
+        echo "APPIAN_BASE_URL=$val" >> "$GITHUB_ENV"
+        if [ -z "${val:-}" ]; then
+          echo "::error::APPIAN_BASE_URL vacío para '$env_lc'"; exit 1
+        fi
+    - name: Resolver configuración de promote (enable_inspection)
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Permitir override por env ya definido en el workflow
+        if [ -z "${APPIAN_PROMOTE_ENABLE_INSPECTION:-}" ]; then
+          conf="${{ github.action_path }}/../_config/appian_promote.env"
+          if [ -f "$conf" ]; then
+            val=$(grep -E '^APPIAN_PROMOTE_ENABLE_INSPECTION=' "$conf" | sed 's/^APPIAN_PROMOTE_ENABLE_INSPECTION=//')
+          else
+            val=""
+          fi
+          val="${val:-true}"
+          echo "APPIAN_PROMOTE_ENABLE_INSPECTION=$val" >> "$GITHUB_ENV"
+        else
+          echo "APPIAN_PROMOTE_ENABLE_INSPECTION=${APPIAN_PROMOTE_ENABLE_INSPECTION}" >> "$GITHUB_ENV"
+        fi
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+    - name: Inspect package
+      if: inputs.dry_run != 'true' && env.APPIAN_PROMOTE_ENABLE_INSPECTION == 'true'
+      shell: bash
+      env:
+        APPIAN_API_KEY_TARGET: ${{ env.APPIAN_API_KEY_TARGET }}
+        APPIAN_BASE_URL: ${{ env.APPIAN_BASE_URL }}
+      run: |
+        set -euo pipefail
+        echo "::add-mask::${APPIAN_API_KEY_TARGET:-}"
+        python "${{ github.action_path }}/appian_cli.py" inspect \
+          --base-url "$APPIAN_BASE_URL" \
+          --api-key "$APPIAN_API_KEY_TARGET" \
+          --package-path "${{ inputs.package_path }}"
+
+    - name: Import package
+      shell: bash
+      env:
+        APPIAN_API_KEY_TARGET: ${{ env.APPIAN_API_KEY_TARGET }}
+        APPIAN_BASE_URL: ${{ env.APPIAN_BASE_URL }}
+      run: |
+        set -euo pipefail
+        echo "::add-mask::${APPIAN_API_KEY_TARGET:-}"
+        python "${{ github.action_path }}/appian_cli.py" import \
+          --base-url "$APPIAN_BASE_URL" \
+          --api-key "$APPIAN_API_KEY_TARGET" \
+          --package-path "${{ inputs.package_path }}" \
+          $([ "${{ inputs.dry_run }}" = "true" ] && echo --dry-run || true)
