@@ -22,35 +22,23 @@ inputs:
 
 outputs:
   artifact_path:
-    description: Ruta del artefacto exportado (zip)
+    description: Ruta relativa del ZIP exportado
     value: ${{ steps.make.outputs.artifact_path }}
   artifact_dir:
-    description: Carpeta local que contiene los artefactos descargados
+    description: Directorio relativo que contiene los artefactos
     value: ${{ steps.make.outputs.artifact_dir }}
-  database_scripts:
-    description: JSON con metadata de scripts de base de datos descargados
-    value: ${{ steps.make.outputs.database_scripts }}
-  plugins_zip:
-    description: Ruta del ZIP de plugins exportado (si aplica)
-    value: ${{ steps.make.outputs.plugins_zip }}
-  customization_file:
-    description: Ruta del archivo de personalización exportado (si aplica)
-    value: ${{ steps.make.outputs.customization_file }}
-  customization_template:
-    description: Ruta del template de personalización exportado (si aplica)
-    value: ${{ steps.make.outputs.customization_template }}
-  downloaded_files:
-    description: JSON con todas las rutas descargadas por la acción
-    value: ${{ steps.make.outputs.downloaded_files }}
+  manifest_path:
+    description: Ruta relativa al manifest con metadatos de la exportación
+    value: ${{ steps.make.outputs.manifest_path }}
+  raw_response_path:
+    description: Ruta relativa al archivo con la respuesta cruda de Appian
+    value: ${{ steps.make.outputs.raw_response_path }}
   deployment_uuid:
     description: UUID del deployment de export en Appian
     value: ${{ steps.make.outputs.deployment_uuid }}
   deployment_status:
     description: Estado final reportado por Appian para la exportación
     value: ${{ steps.make.outputs.deployment_status }}
-  raw_response:
-    description: JSON crudo devuelto por Appian al completar la exportación
-    value: ${{ steps.make.outputs.raw_response }}
 
 runs:
   using: composite
@@ -83,7 +71,9 @@ runs:
         APPIAN_BASE_URL: ${{ env.APPIAN_BASE_URL }}
       run: |
         set -euo pipefail
-        echo "::add-mask::${APPIAN_API_KEY:-}"
+        if [ -n "${APPIAN_API_KEY:-}" ]; then
+          echo "::add-mask::${APPIAN_API_KEY}"
+        fi
         payload=$(python "${{ github.action_path }}/appian_cli.py" export \
           --base-url "$APPIAN_BASE_URL" \
           --api-key "$APPIAN_API_KEY" \
@@ -105,16 +95,49 @@ runs:
         data = json.loads(payload_path.read_text())
 
         output_path = Path(os.environ['GITHUB_OUTPUT'])
+        workspace = Path(os.environ['GITHUB_WORKSPACE']).resolve()
+
+        def to_rel(path: str) -> str:
+            if not path:
+                return ""
+            p = Path(path).resolve()
+            try:
+                return str(p.relative_to(workspace))
+            except ValueError:
+                return str(p)
+
+        manifest_path = Path(data['artifact_dir']) / 'export-manifest.json'
+        raw_response_path = Path(data['artifact_dir']) / 'export-response.json'
+
+        manifest_data = {
+            'artifact_path': to_rel(data['package_path']),
+            'artifact_dir': to_rel(data['artifact_dir']),
+            'deployment_uuid': data['deployment_uuid'],
+            'deployment_status': data['deployment_status'],
+            'downloaded_files': [to_rel(p) for p in data.get('downloaded_files', [])],
+            'database_scripts': [
+                {
+                    **entry,
+                    'path': to_rel(entry.get('path', '')),
+                }
+                for entry in data.get('database_scripts', [])
+                if isinstance(entry, dict)
+            ],
+            'plugins_zip': to_rel(data.get('plugins_zip', '')),
+            'customization_file': to_rel(data.get('customization_file', '')),
+            'customization_template': to_rel(data.get('customization_template', '')),
+        }
+
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        manifest_path.write_text(json.dumps(manifest_data, ensure_ascii=False, indent=2), encoding='utf-8')
+        raw_response_path.write_text(json.dumps(data.get('raw_response', {}), ensure_ascii=False, indent=2), encoding='utf-8')
+
         with output_path.open('a', encoding='utf-8') as fh:
-            fh.write(f"artifact_path={data['package_path']}\n")
-            fh.write(f"artifact_dir={data['artifact_dir']}\n")
-            fh.write(f"database_scripts={json.dumps(data['database_scripts'])}\n")
-            fh.write(f"plugins_zip={data['plugins_zip']}\n")
-            fh.write(f"customization_file={data['customization_file']}\n")
-            fh.write(f"customization_template={data['customization_template']}\n")
-            fh.write(f"downloaded_files={json.dumps(data['downloaded_files'])}\n")
+            fh.write(f"artifact_path={manifest_data['artifact_path']}\n")
+            fh.write(f"artifact_dir={manifest_data['artifact_dir']}\n")
+            fh.write(f"manifest_path={to_rel(manifest_path)}\n")
+            fh.write(f"raw_response_path={to_rel(raw_response_path)}\n")
             fh.write(f"deployment_uuid={data['deployment_uuid']}\n")
             fh.write(f"deployment_status={data['deployment_status']}\n")
-            fh.write(f"raw_response={json.dumps(data['raw_response'])}\n")
         PY
                 rm -f "$tmp_payload"

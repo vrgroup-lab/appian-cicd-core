@@ -95,7 +95,7 @@ jobs:
 
 Notas:
 - Los workflows del Core resuelven la API key correcta según `env` usando los secrets de organización. No se indexan dinámicamente `secrets.*`; se seleccionan de forma explícita por entorno.
-- `export.yml` sube el ZIP como artifact y, si existen, publica artifacts adicionales para scripts SQL, customization file/template y plugins. Expone `artifact_name`, `artifact_path`, `artifact_dir`, `database_scripts`, `plugins_zip`, `customization_file`, `customization_template`, `downloaded_files`, `deployment_uuid`, `deployment_status` y `raw_response`. `promote.yml` descarga por `artifact_name`.
+- `export.yml` sube el ZIP como artifact y, si existen, publica artifacts adicionales para scripts SQL, customization file/template y plugins. Expone `artifact_name`, `artifact_path`, `artifact_dir`, `manifest_path`, `raw_response_path`, `deployment_uuid` y `deployment_status`. `promote.yml` descarga por `artifact_name`.
 - Para pruebas iniciales, `dry_run=true` evita llamadas reales y crea/usa un archivo simulado.
 
 ### Variables/URLs de entornos

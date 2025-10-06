@@ -21,7 +21,7 @@ Mapping steps to CLIs
 Workflow inputs/outputs (summary)
 - export.yml (workflow_call)
   - inputs: `env`, `deploy_kind`, `app_uuid`, `package_name` (opcional), `dry_run`
-  - outputs: `artifact_name`, `artifact_path`, `artifact_dir`, `database_scripts`, `plugins_zip`, `customization_file`, `customization_template`, `downloaded_files`, `deployment_uuid`, `deployment_status`, `raw_response`
+  - outputs: `artifact_name`, `artifact_path`, `artifact_dir`, `manifest_path`, `raw_response_path`, `deployment_uuid`, `deployment_status`
 - promote.yml (workflow_call)
   - inputs: `source_env`, `target_env`, `artifact_name`, `dry_run`
 

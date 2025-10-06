@@ -34,30 +34,18 @@ on:
       artifact_dir:
         description: "Carpeta base donde se descargaron los recursos"
         value: ${{ jobs.export.outputs.artifact_dir }}
-      database_scripts:
-        description: "JSON con scripts de base de datos descargados (puede ser [] si no hay)"
-        value: ${{ jobs.export.outputs.database_scripts }}
-      plugins_zip:
-        description: "Ruta al ZIP de plugins exportado, si existe"
-        value: ${{ jobs.export.outputs.plugins_zip }}
-      customization_file:
-        description: "Ruta al customization file exportado, si existe"
-        value: ${{ jobs.export.outputs.customization_file }}
-      customization_template:
-        description: "Ruta al template de customization exportado, si existe"
-        value: ${{ jobs.export.outputs.customization_template }}
-      downloaded_files:
-        description: "JSON con todas las rutas descargadas (incluye el ZIP principal)"
-        value: ${{ jobs.export.outputs.downloaded_files }}
+      manifest_path:
+        description: "Ruta relativa al manifest generado por la exportación"
+        value: ${{ jobs.export.outputs.manifest_path }}
+      raw_response_path:
+        description: "Ruta relativa a la respuesta cruda almacenada en disco"
+        value: ${{ jobs.export.outputs.raw_response_path }}
       deployment_uuid:
         description: "UUID del deployment de exportación en Appian"
         value: ${{ jobs.export.outputs.deployment_uuid }}
       deployment_status:
         description: "Estado terminal informado por Appian para la exportación"
         value: ${{ jobs.export.outputs.deployment_status }}
-      raw_response:
-        description: "JSON completo devuelto por Appian al finalizar la exportación"
-        value: ${{ jobs.export.outputs.raw_response }}
 
 permissions:
   contents: read
@@ -71,14 +59,10 @@ jobs:
       artifact_path: ${{ steps.export.outputs.artifact_path }}
       artifact_name: ${{ steps.meta.outputs.artifact_name }}
       artifact_dir: ${{ steps.export.outputs.artifact_dir }}
-      database_scripts: ${{ steps.export.outputs.database_scripts }}
-      plugins_zip: ${{ steps.export.outputs.plugins_zip }}
-      customization_file: ${{ steps.export.outputs.customization_file }}
-      customization_template: ${{ steps.export.outputs.customization_template }}
-      downloaded_files: ${{ steps.export.outputs.downloaded_files }}
+      manifest_path: ${{ steps.export.outputs.manifest_path }}
+      raw_response_path: ${{ steps.export.outputs.raw_response_path }}
       deployment_uuid: ${{ steps.export.outputs.deployment_uuid }}
       deployment_status: ${{ steps.export.outputs.deployment_status }}
-      raw_response: ${{ steps.export.outputs.raw_response }}
     steps:
       - name: Resolver API key por entorno
         id: resolve
@@ -168,8 +152,18 @@ jobs:
           if-no-files-found: error
           retention-days: 5
 
+      - name: Subir metadata de exportación
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.meta.outputs.artifact_name }}-meta
+          path: |
+            ${{ steps.export.outputs.manifest_path }}
+            ${{ steps.export.outputs.raw_response_path }}
+          if-no-files-found: error
+          retention-days: 5
+
       - name: Subir scripts de base de datos
-        if: ${{ steps.export.outputs.database_scripts != '[]' }}
+        if: ${{ steps.export.outputs.artifact_dir != '' && hashFiles(format('{0}/db-scripts/**', steps.export.outputs.artifact_dir)) != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.meta.outputs.artifact_name }}-db-scripts
@@ -178,28 +172,28 @@ jobs:
           retention-days: 5
 
       - name: Subir customization file
-        if: ${{ steps.export.outputs.customization_file != '' }}
+        if: ${{ steps.export.outputs.artifact_dir != '' && hashFiles(format('{0}/customization/customization.properties', steps.export.outputs.artifact_dir)) != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.meta.outputs.artifact_name }}-customization
-          path: ${{ steps.export.outputs.customization_file }}
+          path: ${{ steps.export.outputs.artifact_dir }}/customization/customization.properties
           if-no-files-found: error
           retention-days: 5
 
       - name: Subir customization template
-        if: ${{ steps.export.outputs.customization_template != '' }}
+        if: ${{ steps.export.outputs.artifact_dir != '' && hashFiles(format('{0}/customization/customization-template.properties', steps.export.outputs.artifact_dir)) != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.meta.outputs.artifact_name }}-customization-template
-          path: ${{ steps.export.outputs.customization_template }}
+          path: ${{ steps.export.outputs.artifact_dir }}/customization/customization-template.properties
           if-no-files-found: error
           retention-days: 5
 
       - name: Subir plugins ZIP
-        if: ${{ steps.export.outputs.plugins_zip != '' }}
+        if: ${{ steps.export.outputs.artifact_dir != '' && hashFiles(format('{0}/plugins/plugins.zip', steps.export.outputs.artifact_dir)) != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.meta.outputs.artifact_name }}-plugins
-          path: ${{ steps.export.outputs.plugins_zip }}
+          path: ${{ steps.export.outputs.artifact_dir }}/plugins/plugins.zip
           if-no-files-found: error
           retention-days: 5
