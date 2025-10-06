@@ -97,24 +97,24 @@ runs:
         printf '%s' "$payload" > "$tmp_payload"
         export PAYLOAD_FILE="$tmp_payload"
         python <<'PY'
-import json
-import os
-from pathlib import Path
+        import json
+        import os
+        from pathlib import Path
 
-payload_path = Path(os.environ['PAYLOAD_FILE'])
-data = json.loads(payload_path.read_text())
+        payload_path = Path(os.environ['PAYLOAD_FILE'])
+        data = json.loads(payload_path.read_text())
 
-output_path = Path(os.environ['GITHUB_OUTPUT'])
-with output_path.open('a', encoding='utf-8') as fh:
-    fh.write(f"artifact_path={data['package_path']}\n")
-    fh.write(f"artifact_dir={data['artifact_dir']}\n")
-    fh.write(f"database_scripts={json.dumps(data['database_scripts'])}\n")
-    fh.write(f"plugins_zip={data['plugins_zip']}\n")
-    fh.write(f"customization_file={data['customization_file']}\n")
-    fh.write(f"customization_template={data['customization_template']}\n")
-    fh.write(f"downloaded_files={json.dumps(data['downloaded_files'])}\n")
-    fh.write(f"deployment_uuid={data['deployment_uuid']}\n")
-    fh.write(f"deployment_status={data['deployment_status']}\n")
-    fh.write(f"raw_response={json.dumps(data['raw_response'])}\n")
-PY
-        rm -f "$tmp_payload"
+        output_path = Path(os.environ['GITHUB_OUTPUT'])
+        with output_path.open('a', encoding='utf-8') as fh:
+            fh.write(f"artifact_path={data['package_path']}\n")
+            fh.write(f"artifact_dir={data['artifact_dir']}\n")
+            fh.write(f"database_scripts={json.dumps(data['database_scripts'])}\n")
+            fh.write(f"plugins_zip={data['plugins_zip']}\n")
+            fh.write(f"customization_file={data['customization_file']}\n")
+            fh.write(f"customization_template={data['customization_template']}\n")
+            fh.write(f"downloaded_files={json.dumps(data['downloaded_files'])}\n")
+            fh.write(f"deployment_uuid={data['deployment_uuid']}\n")
+            fh.write(f"deployment_status={data['deployment_status']}\n")
+            fh.write(f"raw_response={json.dumps(data['raw_response'])}\n")
+        PY
+                rm -f "$tmp_payload"
