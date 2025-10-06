@@ -122,7 +122,7 @@ jobs:
       - name: Resolver package UUID por nombre (MVP)
         id: pkg
         if: ${{ steps.res.outputs.kind == 'package' && steps.res.outputs.need_resolve == 'true' }}
-        uses: bice-vida/appian-cicd-core/.github/actions/appian-resolve-package@develop
+        uses: vrgroup-lab/appian-cicd-core/.github/actions/appian-resolve-package@develop
         with:
           env_name: ${{ inputs.env }}
           app_uuid: ${{ inputs.app_uuid }}
@@ -141,7 +141,7 @@ jobs:
 
       - name: Exportar recurso (MVP)
         id: export
-        uses: bice-vida/appian-cicd-core/.github/actions/appian-export@develop
+        uses: vrgroup-lab/appian-cicd-core/.github/actions/appian-export@develop
         with:
           env_name: ${{ inputs.env }}
           resource_kind: ${{ steps.res.outputs.kind }}
