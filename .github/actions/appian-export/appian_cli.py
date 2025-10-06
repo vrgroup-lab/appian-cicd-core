@@ -209,7 +209,7 @@ def _download_database_scripts(base_url: str, api_key: str, results: Dict[str, A
         safe_url = _ensure_absolute_url(base_url, str(url))
         order = entry.get("orderId")
         fallback_name = f"script_{idx}.sql"
-        original_name = str(entry.get("fileName") or fallback_name)
+        original_name = str(entry.get("filename") or entry.get("fileName") or fallback_name)
         safe_name = _sanitize_filename(original_name, fallback_name)
         prefix = ""
         try:
