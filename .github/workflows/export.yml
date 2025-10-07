@@ -19,6 +19,10 @@ on:
         description: "Nombre del paquete (para resolver UUID si no se entrega)"
         required: false
         type: string
+      application_name:
+        description: "Nombre de la aplicación para nombrar artifacts"
+        required: false
+        type: string
       dry_run:
         description: "No llama API reales; genera artefacto simulado"
         required: false
@@ -141,7 +145,11 @@ jobs:
           # Nombre estable que funciona tanto para app como package
           nm_part='${{ inputs.package_name }}'
           if [ -z "$nm_part" ]; then nm_part='${{ steps.rid.outputs.id }}'; fi
-          name="appian-${{ inputs.deploy_kind }}-${{ inputs.app_uuid }}-${nm_part}-${{ github.run_id }}"
+          app_part='${{ inputs.application_name }}'
+          if [ -z "$app_part" ]; then app_part='app'; fi
+          safe_app=$(echo "$app_part" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9._-' '-')
+          safe_nm=$(echo "$nm_part" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9._-' '-')
+          name="appian-${safe_app}-${{ inputs.deploy_kind }}-${safe_nm}-${{ github.run_id }}"
           echo "artifact_name=$name" >> "$GITHUB_OUTPUT"
 
       - name: Subir paquete exportado (ZIP)
