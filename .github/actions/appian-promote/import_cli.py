@@ -5,7 +5,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict
 
 # Soportar ejecución directa del script
 if __package__ is None:  # pragma: no cover
@@ -91,10 +91,10 @@ def import_package(base_url: str, api_key: str, package_path: Path, dry_run: boo
                    admin_settings_path: Optional[Path] = None,
                    plugins_zip: Optional[Path] = None,
                    name: Optional[str] = None,
-                   description: str = ""):
+                   description: str = "") -> Dict[str, object]:
     if dry_run:
         log("[dry_run] Simulando import; no se llama API")
-        return
+        return {"status": "DRY_RUN", "uuid": ""}
     if not package_path.exists():
         raise FileNotFoundError(f"No existe el paquete: {package_path}")
 
@@ -178,6 +178,7 @@ def import_package(base_url: str, api_key: str, package_path: Path, dry_run: boo
 
     objs = (summary.get("objects") or {})
     log(f"Import OK: objects.imported={objs.get('imported')} failed={objs.get('failed')} skipped={objs.get('skipped')}")
+    return {"status": final_status, "uuid": dep_uuid or "", "deployment": final or {}}
 
 
 def main():
