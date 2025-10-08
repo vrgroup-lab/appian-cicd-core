@@ -36,7 +36,6 @@ def main():
     pimp.add_argument("--name", default="", help="Nombre del deployment (opcional)")
     pimp.add_argument("--description", default="", help="Descripción del deployment (opcional)")
     pimp.add_argument("--json-output", default="", help="Archivo donde guardar status/uuid")
-    pimp.add_argument("--dry-run", action="store_true")
 
     args = p.parse_args()
 
@@ -61,7 +60,6 @@ def main():
             args.base_url,
             args.api_key,
             Path(args.package_path),
-            args.dry_run,
             customization,
             admin_settings,
             plugins,
@@ -81,4 +79,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

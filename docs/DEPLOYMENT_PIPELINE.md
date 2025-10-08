@@ -15,7 +15,7 @@ Step-by-step
 - Export job (`.github/workflows/export.yml`):
   - Resolve API key for `inputs.env` from secrets.
   - Optionally resolve package UUID from name using `.github/actions/appian-resolve-package`.
-  - Call `.github/actions/appian-export` to export (dry-run supported for testing).
+  - Call `.github/actions/appian-export` to export vía API de Appian.
   - Upload ZIP as artifact and expose `artifact_name`.
 - Promote job (`.github/workflows/promote.yml`):
   - Resolve `APPIAN_API_KEY_TARGET` per `target_env` secrets and set `environment: <target_env>`.
@@ -36,4 +36,3 @@ State machine and retries
 Configuration knobs
 - `.github/actions/_config/appian_promote.env` controls inspection enablement.
 - Poll intervals and timeouts via env vars (see CONFIGURATION.md).
-

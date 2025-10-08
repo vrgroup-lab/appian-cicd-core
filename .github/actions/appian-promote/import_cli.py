@@ -86,15 +86,12 @@ def _get_deployment_log(base_url: str, api_key: str, dep_uuid: str) -> str:
         return raw.decode("latin-1", "ignore")
 
 
-def import_package(base_url: str, api_key: str, package_path: Path, dry_run: bool,
+def import_package(base_url: str, api_key: str, package_path: Path,
                    customization_path: Optional[Path] = None,
                    admin_settings_path: Optional[Path] = None,
                    plugins_zip: Optional[Path] = None,
                    name: Optional[str] = None,
                    description: str = "") -> Dict[str, object]:
-    if dry_run:
-        log("[dry_run] Simulando import; no se llama API")
-        return {"status": "DRY_RUN", "uuid": ""}
     if not package_path.exists():
         raise FileNotFoundError(f"No existe el paquete: {package_path}")
 
@@ -191,7 +188,6 @@ def main():
     p.add_argument("--plugins-zip", default="")
     p.add_argument("--name", default="")
     p.add_argument("--description", default="")
-    p.add_argument("--dry-run", action="store_true")
     args = p.parse_args()
 
     customization = Path(args.customization_path).resolve() if args.customization_path else None
@@ -203,7 +199,6 @@ def main():
         args.base_url,
         args.api_key,
         Path(args.package_path),
-        args.dry_run,
         customization,
         admin_settings,
         plugins,

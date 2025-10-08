@@ -15,11 +15,6 @@ on:
         description: "Nombre del artifact a descargar"
         required: true
         type: string
-      dry_run:
-        description: "No llama API reales; simula import"
-        required: false
-        default: false
-        type: boolean
 
 permissions:
   contents: read
@@ -69,5 +64,3 @@ jobs:
           source_env: ${{ inputs.source_env }}
           target_env: ${{ inputs.target_env }}
           package_path: ${{ steps.resolve_pkg.outputs.path }}
-          dry_run: ${{ inputs.dry_run }}
-

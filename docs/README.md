@@ -19,12 +19,12 @@ Prerequisites
 - GitHub Secrets (org or repo level): `APPIAN_DEV_API_KEY`, `APPIAN_QA_API_KEY`, `APPIAN_PROD_API_KEY` (and `APPIAN_DEMO_API_KEY` if used).
 - Base URLs set in `.github/actions/_config/appian_base_urls.env`.
 
-Run locally (mock and real)
+Run locally
 - Inspect (real API) using Core CLI:
   - `python .github/actions/appian-promote/appian_cli.py inspect --base-url <BASE_URL_QA> --api-key <API_KEY_QA> --package-path /path/to/pkg.zip`
-- Import (real API) using Core CLI (dry run to skip API):
-  - `python .github/actions/appian-promote/appian_cli.py import --base-url <BASE_URL_QA> --api-key <API_KEY_QA> --package-path /path/to/pkg.zip --dry-run`
-- Export (MVP supports real export start + polling + download when available; otherwise dry-run creates a fake zip):
+- Import (real API) using Core CLI:
+  - `python .github/actions/appian-promote/appian_cli.py import --base-url <BASE_URL_QA> --api-key <API_KEY_QA> --package-path /path/to/pkg.zip`
+- Export (real API) using Core CLI:
   - `python .github/actions/appian-export/appian_cli.py export --base-url <BASE_URL_DEV> --api-key <API_KEY_DEV> --kind package --rid <PACKAGE_UUID> --outdir artifacts`
 
 Run via GitHub Actions (recommended)

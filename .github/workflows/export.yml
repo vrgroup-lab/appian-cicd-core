@@ -23,11 +23,6 @@ on:
         description: "Nombre del paquete (para resolver UUID si no se entrega)"
         required: false
         type: string
-      dry_run:
-        description: "No llama API reales; genera artefacto simulado"
-        required: false
-        default: false
-        type: boolean
     outputs:
       artifact_path:
         description: "Ruta del artefacto exportado"
@@ -135,7 +130,6 @@ jobs:
           resource_kind: ${{ steps.res.outputs.kind }}
           resource_id: ${{ steps.rid.outputs.id }}
           display_name: ${{ inputs.package_name }}
-          dry_run: ${{ inputs.dry_run }}
 
       - name: Definir nombre de artifact
         id: meta

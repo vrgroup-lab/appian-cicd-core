@@ -1,5 +1,5 @@
 name: appian-export (MVP)
-description: Exporta recurso Appian (app o package) y genera un ZIP simulado
+description: Exporta recurso Appian (app o package) y descarga los artefactos asociados
 
 inputs:
   env_name:
@@ -15,10 +15,6 @@ inputs:
     description: Nombre amigable para nombrar el archivo (opcional)
     required: false
     default: ''
-  dry_run:
-    description: Si es true, no llama APIs y genera archivo simulado
-    required: false
-    default: 'false'
 
 outputs:
   artifact_path:
@@ -80,8 +76,7 @@ runs:
           --kind "${{ inputs.resource_kind }}" \
           --rid "${{ inputs.resource_id }}" \
           --name "${{ inputs.display_name }}" \
-          --outdir artifacts \
-          $([ "${{ inputs.dry_run }}" = "true" ] && echo --dry-run || true))
+          --outdir artifacts)
         payload=$(echo "$payload" | tail -n 1 | tr -d '\r')
         tmp_payload=$(mktemp)
         printf '%s' "$payload" > "$tmp_payload"

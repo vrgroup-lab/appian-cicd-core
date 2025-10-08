@@ -20,14 +20,14 @@ Mapping steps to CLIs
 
 Workflow inputs/outputs (summary)
 - export.yml (workflow_call)
-  - inputs: `env`, `deploy_kind`, `app_uuid`, `package_name` (opcional), `app_name` (opcional), `dry_run`
+  - inputs: `env`, `deploy_kind`, `app_uuid`, `package_name` (opcional), `app_name` (opcional)
   - outputs: `artifact_name`, `artifact_path`, `artifact_dir`, `manifest_path`, `raw_response_path`, `deployment_uuid`, `deployment_status`
 - promote.yml (workflow_call)
-  - inputs: `source_env`, `target_env`, `artifact_name`, `dry_run`
+  - inputs: `source_env`, `target_env`, `artifact_name`
 
 Conditions and environments
 - `promote.yml` sets `environment: <target_env>` so approvals and protection rules apply in the caller repo.
-- Dry runs propagate to underlying CLIs to avoid real API calls.
+
 
 Configuration resolution
 - Base URLs resolved from `.github/actions/_config/appian_base_urls.env` inside actions.

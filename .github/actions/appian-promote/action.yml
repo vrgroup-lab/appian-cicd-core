@@ -14,10 +14,6 @@ inputs:
   icf_path:
     description: Ruta al ICF (import customization file) opcional
     required: false
-  dry_run:
-    description: Si es true, no llama APIs y simula import
-    required: false
-    default: 'false'
 
 outputs:
   deployment_status:
@@ -69,7 +65,7 @@ runs:
       with:
         python-version: '3.x'
     - name: Inspect package
-      if: inputs.dry_run != 'true' && env.APPIAN_PROMOTE_ENABLE_INSPECTION == 'true'
+      if: env.APPIAN_PROMOTE_ENABLE_INSPECTION == 'true'
       shell: bash
       env:
         APPIAN_API_KEY_TARGET: ${{ env.APPIAN_API_KEY_TARGET }}
@@ -107,9 +103,6 @@ runs:
         )
         if [ -n "${{ inputs.icf_path }}" ]; then
           cmd+=(--icf-path "${{ inputs.icf_path }}")
-        fi
-        if [ "${{ inputs.dry_run }}" = "true" ]; then
-          cmd+=(--dry-run)
         fi
         "${cmd[@]}"
         status=""
