@@ -115,21 +115,24 @@ runs:
         status=""
         uuid=""
         if [ -f "$out_json" ]; then
-          readarray -t parsed < <(OUT_JSON="$out_json" python -c 'import json, os, sys
-path = os.environ.get("OUT_JSON", "")
-data = {}
-if path:
-    try:
-        with open(path, "r", encoding="utf-8") as fh:
-            data = json.load(fh)
-    except Exception:
+          readarray -t parsed < <(OUT_JSON="$out_json" python - <<'PY'
+        import json, os, sys
+        path = os.environ.get("OUT_JSON", "")
         data = {}
-for key in ("status", "uuid"):
-    sys.stdout.write(str(data.get(key, "")) + "\n")')
-          if [ "${#parsed[@]}" -ge 1 ]; then status="${parsed[0]}"; fi
-          if [ "${#parsed[@]}" -ge 2 ]; then uuid="${parsed[1]}"; fi
-        fi
-        {
-          echo "deployment_status=$status"
-          echo "deployment_uuid=$uuid"
-        } >> "$GITHUB_OUTPUT"
+        if path:
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    data = json.load(fh)
+            except Exception:
+                data = {}
+        for key in ("status", "uuid"):
+            sys.stdout.write(str(data.get(key, "")) + "\n")
+        PY
+        )
+                  if [ "${#parsed[@]}" -ge 1 ]; then status="${parsed[0]}"; fi
+                  if [ "${#parsed[@]}" -ge 2 ]; then uuid="${parsed[1]}"; fi
+                fi
+                {
+                  echo "deployment_status=$status"
+                  echo "deployment_uuid=$uuid"
+                } >> "$GITHUB_OUTPUT"
