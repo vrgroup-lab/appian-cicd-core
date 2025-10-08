@@ -54,10 +54,5 @@ runs:
         fi
         python "${args[@]}"
         OUT_PATH="${{ inputs.out_path }}"
-        resolved=$(OUT_PATH="$OUT_PATH" python - <<'PY'
-          from pathlib import Path
-          import os
-          print(Path(os.environ['OUT_PATH']).resolve())
-        PY
-        )
+        resolved=$(OUT_PATH="$OUT_PATH" python -c 'from pathlib import Path; import os; print(Path(os.environ["OUT_PATH"]).resolve())')
         echo "icf_path=$resolved" >> "$GITHUB_OUTPUT"
