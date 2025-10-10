@@ -136,6 +136,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          artifact_path='${{ steps.export.outputs.artifact_path }}'
+          if [ -z "$artifact_path" ]; then
+            echo "::error::artifact_path vacío; revisar salida de appian-export."
+            exit 1
+          fi
           # Nombre estable que funciona tanto para app como package
           nm_part='${{ inputs.package_name }}'
           if [ -z "$nm_part" ]; then nm_part='${{ steps.rid.outputs.id }}'; fi
@@ -146,6 +151,13 @@ jobs:
           safe_nm=$(echo "$nm_part" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9._-' '-')
           if [ -z "$safe_nm" ]; then safe_nm='pkg'; fi
           name="appian-${safe_app}-${{ inputs.deploy_kind }}-${safe_nm}-${{ github.run_id }}"
+          if [ -z "$name" ]; then
+            name=$(basename "$artifact_path")
+            if [ -z "$name" ]; then
+              echo "::error::No se pudo resolver artifact_name a partir de artifact_path ($artifact_path)."
+              exit 1
+            fi
+          fi
           echo "artifact_name=$name" >> "$GITHUB_OUTPUT"
 
       - name: Subir paquete exportado (ZIP)
