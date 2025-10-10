@@ -59,7 +59,7 @@ jobs:
           echo "path=$found" >> "$GITHUB_OUTPUT"
 
       - name: Promover paquete
-        uses: vrgroup-lab/appian-cicd-core/.github/actions/appian-promote@develop
+        uses: vrgroup-lab/appian-cicd-core/.github/actions/appian-promote@icfbuild
         with:
           source_env: ${{ inputs.source_env }}
           target_env: ${{ inputs.target_env }}
