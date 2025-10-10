@@ -124,7 +124,7 @@ jobs:
 
       - name: Exportar recurso (MVP)
         id: export
-        uses: vrgroup-lab/appian-cicd-core/.github/actions/appian-export@develop
+        uses: vrgroup-lab/appian-cicd-core/.github/actions/appian-export@icfbuild
         with:
           env_name: ${{ inputs.env }}
           resource_kind: ${{ steps.res.outputs.kind }}

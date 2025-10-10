@@ -84,6 +84,7 @@ runs:
         python <<'PY'
         import json
         import os
+        import sys
         from pathlib import Path
 
         payload_path = Path(os.environ['PAYLOAD_FILE'])
@@ -91,6 +92,10 @@ runs:
 
         output_path = Path(os.environ['GITHUB_OUTPUT'])
         workspace = Path(os.environ['GITHUB_WORKSPACE']).resolve()
+
+        def fail(msg: str) -> None:
+            sys.stderr.write(f"::error::{msg}\n")
+            sys.exit(1)
 
         def to_rel(path: str) -> str:
             if not path:
@@ -101,14 +106,28 @@ runs:
             except ValueError:
                 return str(p)
 
-        manifest_path = Path(data['artifact_dir']) / 'export-manifest.json'
-        raw_response_path = Path(data['artifact_dir']) / 'export-response.json'
+        package_path = data.get('package_path', '')
+        if not package_path:
+            fail("appian_cli.py export no devolvió 'package_path'")
+        package_file = Path(package_path)
+        if not package_file.exists():
+            fail(f"No se encontró ZIP exportado en '{package_path}'")
+
+        artifact_dir_raw = data.get('artifact_dir', '')
+        if not artifact_dir_raw:
+            fail("appian_cli.py export no devolvió 'artifact_dir'")
+        artifact_dir = Path(artifact_dir_raw)
+        if not artifact_dir.exists():
+            fail(f"El directorio de artefactos '{artifact_dir_raw}' no existe")
+
+        manifest_path = artifact_dir / 'export-manifest.json'
+        raw_response_path = artifact_dir / 'export-response.json'
 
         manifest_data = {
-            'artifact_path': to_rel(data['package_path']),
-            'artifact_dir': to_rel(data['artifact_dir']),
-            'deployment_uuid': data['deployment_uuid'],
-            'deployment_status': data['deployment_status'],
+            'artifact_path': to_rel(str(package_file)),
+            'artifact_dir': to_rel(str(artifact_dir)),
+            'deployment_uuid': data.get('deployment_uuid', ''),
+            'deployment_status': data.get('deployment_status', ''),
             'downloaded_files': [to_rel(p) for p in data.get('downloaded_files', [])],
             'database_scripts': [
                 {
@@ -130,9 +149,9 @@ runs:
         with output_path.open('a', encoding='utf-8') as fh:
             fh.write(f"artifact_path={manifest_data['artifact_path']}\n")
             fh.write(f"artifact_dir={manifest_data['artifact_dir']}\n")
-            fh.write(f"manifest_path={to_rel(manifest_path)}\n")
-            fh.write(f"raw_response_path={to_rel(raw_response_path)}\n")
-            fh.write(f"deployment_uuid={data['deployment_uuid']}\n")
-            fh.write(f"deployment_status={data['deployment_status']}\n")
+            fh.write(f"manifest_path={to_rel(str(manifest_path))}\n")
+            fh.write(f"raw_response_path={to_rel(str(raw_response_path))}\n")
+            fh.write(f"deployment_uuid={data.get('deployment_uuid', '')}\n")
+            fh.write(f"deployment_status={data.get('deployment_status', '')}\n")
         PY
                 rm -f "$tmp_payload"
