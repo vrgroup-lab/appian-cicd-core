@@ -148,12 +148,14 @@ def build_icf(template_path: Path, map_path: Path | None, env: str, out_path: Pa
 
     processed_lines = [process_line(ln) for ln in template_lines]
 
+    appended_keys: list[str] = []
     unused = sorted(set(merged.keys()) - applied_keys)
     appended_lines: list[str] = []
     for key in unused:
         value = merged[key]
         appended_lines.append(f"{key}={value}\n")
         active_values[key] = value
+        appended_keys.append(key)
         _log(f"::notice::Clave '{key}' agregada al final del ICF (no existía en template).")
 
     if appended_lines:
@@ -162,6 +164,17 @@ def build_icf(template_path: Path, map_path: Path | None, env: str, out_path: Pa
             processed_lines[-1] = processed_lines[-1] + "\n"
         processed_lines.append("\n# --- Claves agregadas automaticamente ---\n")
         processed_lines.extend(appended_lines)
+
+    ignored_keys = sorted(set(merged.keys()) - applied_keys - set(appended_keys))
+    for key in ignored_keys:
+        _log(f"::warning::Override para clave '{key}' no se aplicó (no existe en template).")
+
+    _log(
+        (
+            "Overrides procesados: "
+            f"aplicados={len(applied_keys)} agregados={len(appended_keys)} ignorados={len(ignored_keys)}"
+        )
+    )
 
     if env != "dev":
         for key, value in active_values.items():
