@@ -14,6 +14,12 @@ inputs:
   icf_path:
     description: Ruta al ICF (import customization file) opcional
     required: false
+  data_source:
+    description: Nombre o UUID del data source para ejecutar scripts de base de datos (opcional)
+    required: false
+  db_scripts_path:
+    description: Directorio con scripts SQL/DDL a ejecutar (opcional)
+    required: false
 
 outputs:
   deployment_status:
@@ -103,6 +109,12 @@ runs:
         )
         if [ -n "${{ inputs.icf_path }}" ]; then
           cmd+=(--icf-path "${{ inputs.icf_path }}")
+        fi
+        if [ -n "${{ inputs.data_source }}" ]; then
+          cmd+=(--data-source "${{ inputs.data_source }}")
+        fi
+        if [ -n "${{ inputs.db_scripts_path }}" ]; then
+          cmd+=(--db-scripts-dir "${{ inputs.db_scripts_path }}")
         fi
         "${cmd[@]}"
         status=""

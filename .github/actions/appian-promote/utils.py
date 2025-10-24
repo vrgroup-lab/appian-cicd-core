@@ -3,7 +3,7 @@ import json
 import sys
 import uuid as _uuid
 from pathlib import Path
-from typing import Dict, Tuple, Optional
+from typing import Dict, Tuple, Optional, Union
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
@@ -53,7 +53,10 @@ def _guess_ct(path: Path) -> str:
     return "application/octet-stream"
 
 
-def _multipart_form(json_part: dict, files: Dict[str, Path]) -> Tuple[bytes, str]:
+FileEntry = Union[Path, Tuple[Path, Optional[str]]]
+
+
+def _multipart_form(json_part: dict, files: Dict[str, FileEntry]) -> Tuple[bytes, str]:
     boundary = f"----AppianBoundary{_uuid.uuid4().hex}"
     parts: list[bytes] = []
 
@@ -64,12 +67,17 @@ def _multipart_form(json_part: dict, files: Dict[str, Path]) -> Tuple[bytes, str
         f"Content-Type: application/json\r\n\r\n"
     ).encode("utf-8") + json_bytes + b"\r\n")
 
-    for field, path in files.items():
+    for field, entry in files.items():
+        if isinstance(entry, tuple):
+            path, override_name = entry
+        else:
+            path, override_name = entry, None
         data = path.read_bytes()
         ct = _guess_ct(path)
+        filename = override_name or path.name
         disp = (
             f"--{boundary}\r\n"
-            f"Content-Disposition: form-data; name=\"{field}\"; filename=\"{path.name}\"\r\n"
+            f"Content-Disposition: form-data; name=\"{field}\"; filename=\"{filename}\"\r\n"
             f"Content-Type: {ct}\r\n\r\n"
         ).encode("utf-8")
         parts.append(disp + data + b"\r\n")
@@ -78,4 +86,3 @@ def _multipart_form(json_part: dict, files: Dict[str, Path]) -> Tuple[bytes, str
     body = b"".join(parts)
     content_type = f"multipart/form-data; boundary={boundary}"
     return body, content_type
-
