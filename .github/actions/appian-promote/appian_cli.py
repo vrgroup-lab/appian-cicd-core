@@ -94,6 +94,9 @@ def main():
             db_scripts = _collect_db_scripts(db_scripts_dir)
             if not db_scripts:
                 log(f"No se encontraron archivos .sql/.ddl en {db_scripts_dir}")
+            else:
+                names = ", ".join(script[1] for script in db_scripts)
+                log(f"Adjuntando {len(db_scripts)} database scripts desde {db_scripts_dir}: {names}")
         result = import_package(
             args.base_url,
             args.api_key,

@@ -54,6 +54,7 @@ def _post_import(base_url: str, api_key: str, name: str, description: str, packa
             files[f"databaseScript{idx}"] = (script_path, fname)
         if payload_scripts:
             json_obj["databaseScripts"] = payload_scripts
+            log(f"Payload incluye {len(payload_scripts)} database scripts; dataSource={data_source or '(ninguno)'}")
 
     body, ctype = _multipart_form(json_obj, files)
     headers = {
