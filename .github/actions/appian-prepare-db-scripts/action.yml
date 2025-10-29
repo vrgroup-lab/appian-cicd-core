@@ -60,7 +60,7 @@ runs:
         META_DIR: ${{ steps.download_export_meta.outputs.download-path }}
       run: |
         set -euo pipefail
-        python3 ".github/scripts/prepare_db_scripts.py" \
+        python3 "${{ github.action_path }}/prepare_db_scripts.py" \
           --output "$GITHUB_OUTPUT" \
           --scripts-dir "${SCRIPTS_DIR:-}" \
           --meta-dir "${META_DIR:-}"
