@@ -23,6 +23,8 @@ ALLOWED_PREFIXES: Tuple[str, ...] = (
     "processModel.",
 )
 
+PROTECTED_SUFFIX = ".forceoverrideprotection"
+
 
 def _log(msg: str) -> None:
     print(msg, file=sys.stderr, flush=True)
@@ -97,11 +99,18 @@ def build_icf(template_path: Path, map_path: Path | None, env: str, out_path: Pa
     json_data = _load_json_overrides(json_env)
 
     merged: Dict[str, str] = {}
+    whitelist_ignored: list[str] = []
+    protected_ignored: list[str] = []
+
     for key, value in {**yaml_data, **json_data}.items():
         if not isinstance(key, str):
             raise ValueError("Las claves deben ser strings")
+        normalized = key.replace(" ", "").lower()
+        if normalized.endswith(PROTECTED_SUFFIX):
+            protected_ignored.append(key)
+            continue
         if not _is_whitelisted(key):
-            _log(f"::notice::Clave '{key}' fuera de whitelist; se ignora override.")
+            whitelist_ignored.append(key)
             continue
         merged[key] = _stringify(value, key)
 
@@ -156,7 +165,6 @@ def build_icf(template_path: Path, map_path: Path | None, env: str, out_path: Pa
         appended_lines.append(f"{key}={value}\n")
         active_values[key] = value
         appended_keys.append(key)
-        _log(f"::notice::Clave '{key}' agregada al final del ICF (no existía en template).")
 
     if appended_lines:
         # Separar la sección agregada para facilitar lectura futura.
@@ -175,6 +183,20 @@ def build_icf(template_path: Path, map_path: Path | None, env: str, out_path: Pa
             f"aplicados={len(applied_keys)} agregados={len(appended_keys)} ignorados={len(ignored_keys)}"
         )
     )
+
+    if whitelist_ignored:
+        joined = ", ".join(whitelist_ignored)
+        _log(f"::debug::Claves fuera de whitelist ignoradas: {joined}")
+    if protected_ignored:
+        joined = ", ".join(protected_ignored)
+        _log(f"::debug::Claves forceOverrideProtection omitidas: {joined}")
+    if appended_keys:
+        joined = ", ".join(appended_keys)
+        _log(f"::notice::Se agregaron {len(appended_keys)} claves al final del ICF: {joined}")
+    elif applied_keys:
+        _log(f"::notice::Se actualizaron {len(applied_keys)} claves existentes en el ICF.")
+    else:
+        _log("::notice::No se aplicaron overrides al ICF (sin cambios).")
 
     if env != "dev":
         for key, value in active_values.items():
