@@ -1,58 +1,95 @@
-name: Promote
+name: Promote Appian Package (reusable)
 
 on:
   workflow_call:
     inputs:
-      base-url:       { required: true, type: string }
-      package-path:   { required: true, type: string }
-      poll-timeout-sec: { required: false, type: number }
-      poll-interval-sec: { required: false, type: number }
-    secrets:
-      APPIAN_API_KEY: { required: true }
+      source_env:
+        description: "Origen (dev|qa|demo)"
+        required: true
+        type: string
+      target_env:
+        description: "Destino (qa|prod|demo)"
+        required: true
+        type: string
+      artifact_name:
+        description: "Nombre del artifact a descargar"
+        required: true
+        type: string
+      data_source:
+        description: "Nombre/UUID del data source para ejecutar scripts de base de datos (opcional)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: read
 
 jobs:
   promote:
+    name: Promote package
     runs-on: ubuntu-latest
+    environment: ${{ inputs.target_env }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Promote package to Appian
-        uses: ./.github/actions/promote
-        with:
-          base-url: ${{ inputs.base-url }}
-          api-key: ${{ secrets.APPIAN_API_KEY }}
-          package-path: ${{ inputs.package-path }}
-          poll-timeout-sec: ${{ inputs['poll-timeout-sec'] }}
-          poll-interval-sec: ${{ inputs['poll-interval-sec'] }}
-
-      - name: Validate inputs
+      - name: Resolver API key (target)
         shell: bash
         run: |
           set -euo pipefail
-          [[ -f "${{ inputs.manifest_path }}" ]] || { echo "Manifest not found: ${{ inputs.manifest_path }}"; exit 1; }
-          if [[ "${{ inputs.export_scope }}" == "package" && -z "${{ inputs.package_name }}" ]]; then
-            echo "package_name is required when export_scope=package"; exit 1;
-          fi
+          tgt="${{ inputs.target_env }}"; tgt_lc="${{ inputs.target_env }}"; tgt_lc="${tgt_lc,,}"
+          case "$tgt_lc" in
+            dev)  echo "APPIAN_API_KEY_TARGET=${{ secrets.APPIAN_DEV_API_KEY }}" >> "$GITHUB_ENV" ;;
+            qa)   echo "APPIAN_API_KEY_TARGET=${{ secrets.APPIAN_QA_API_KEY }}" >> "$GITHUB_ENV" ;;
+            prod) echo "APPIAN_API_KEY_TARGET=${{ secrets.APPIAN_PROD_API_KEY }}" >> "$GITHUB_ENV" ;;
+            demo) echo "APPIAN_API_KEY_TARGET=${{ secrets.APPIAN_DEMO_API_KEY }}" >> "$GITHUB_ENV" ;;
+            *) echo "::error::Entorno target no soportado: $tgt"; exit 1 ;;
+          esac
+          echo "APPIAN_TARGET_ENV=$tgt" >> "$GITHUB_ENV"
 
-      - name: Wire check (promote)
-        env:
-          URL: ${{ inputs.appian_url }}
-          PUBLIC_JSON: ${{ inputs.app_props_public_json }}
+      - name: Descargar artifact por nombre
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: downloaded
+
+      - name: Descargar scripts de base de datos (si existen)
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ format('{0}-db-scripts', inputs.artifact_name) }}
+          path: db-scripts
+        continue-on-error: true
+
+      - name: Resolver ruta del paquete
+        id: resolve_pkg
+        shell: bash
         run: |
-          echo "[core/promote] ENV=${{ inputs.target_env }}"
-          echo "[core/promote] MANIFEST=${{ inputs.manifest_path }}"
-          echo "[core/promote] SCOPE=${{ inputs.export_scope }}"
-          echo "[core/promote] PACKAGE=${{ inputs.package_name }}"
-          echo "[core/promote] URL=${URL}"
-          echo "[core/promote] PUBLIC_JSON length=${#PUBLIC_JSON}"
-          echo "[core/promote] Secrets wired (API_KEY + SENSITIVE_JSON)"
+          set -euo pipefail
+          found=$(find downloaded -type f -name '*.zip' -print -quit)
+          if [[ -z "$found" ]]; then
+            echo "::error::No se pudo resolver 'package_path' a partir del artifact descargado. Verifique 'artifact_name'."
+            exit 1
+          fi
+          echo "path=$found" >> "$GITHUB_OUTPUT"
 
-      # (opcional) Smoke ping sin exponer valores
-      # - name: Smoke ping deployments (optional)
-      #   env:
-      #     URL: ${{ inputs.appian_url }}
-      #     KEY: ${{ secrets.APPIAN_API_KEY }}
-      #   run: |
-      #     set -e
-      #     CODE=$(curl -sS -o /dev/null -w "%{http_code}" \
-      #       -H "appian-api-key: $KEY" "$URL/suite/deployment/v1/deployments")
-      #     echo "HTTP $CODE (expected 200/401/403)"
+      - name: Resolver scripts de base de datos
+        id: resolve_db_scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="db-scripts"
+          if [ ! -d "$dir" ]; then
+            exit 0
+          fi
+          first=$(find "$dir" -type f \( -iname '*.sql' -o -iname '*.ddl' \) -print -quit || true)
+          if [ -z "$first" ]; then
+            exit 0
+          fi
+          abs_dir="$(cd "$dir" && pwd)"
+          echo "path=$abs_dir" >> "$GITHUB_OUTPUT"
+
+      - name: Promover paquete
+        uses: vrgroup-lab/appian-cicd-core/.github/actions/appian-promote@icfbuild
+        with:
+          source_env: ${{ inputs.source_env }}
+          target_env: ${{ inputs.target_env }}
+          package_path: ${{ steps.resolve_pkg.outputs.path }}
+          data_source: ${{ inputs.data_source }}
+          db_scripts_path: ${{ steps.resolve_db_scripts.outputs.path }}

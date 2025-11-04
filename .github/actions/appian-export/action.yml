@@ -1,0 +1,157 @@
+name: appian-export (MVP)
+description: Exporta recurso Appian (app o package) y descarga los artefactos asociados
+
+inputs:
+  env_name:
+    description: Entorno Appian (solo para logging)
+    required: true
+  resource_kind:
+    description: Tipo de recurso a exportar (app|application|package)
+    required: true
+  resource_id:
+    description: UUID del recurso (app_uuid o package_uuid)
+    required: true
+  display_name:
+    description: Nombre amigable para nombrar el archivo (opcional)
+    required: false
+    default: ''
+
+outputs:
+  artifact_path:
+    description: Ruta relativa del ZIP exportado
+    value: ${{ steps.make.outputs.artifact_path }}
+  artifact_dir:
+    description: Directorio relativo que contiene los artefactos
+    value: ${{ steps.make.outputs.artifact_dir }}
+  manifest_path:
+    description: Ruta relativa al manifest con metadatos de la exportación
+    value: ${{ steps.make.outputs.manifest_path }}
+  raw_response_path:
+    description: Ruta relativa al archivo con la respuesta cruda de Appian
+    value: ${{ steps.make.outputs.raw_response_path }}
+  deployment_uuid:
+    description: UUID del deployment de export en Appian
+    value: ${{ steps.make.outputs.deployment_uuid }}
+  deployment_status:
+    description: Estado final reportado por Appian para la exportación
+    value: ${{ steps.make.outputs.deployment_status }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolver APPIAN_BASE_URL desde config del Core
+      shell: bash
+      run: |
+        set -euo pipefail
+        file="${{ github.action_path }}/../_config/appian_base_urls.env"
+        env_lc='${{ inputs.env_name }}'; env_lc="${env_lc,,}"
+        case "$env_lc" in
+          dev)   val=$(grep -E '^DEV='  "$file" | sed 's/^DEV=//') ;;
+          qa)    val=$(grep -E '^QA='   "$file" | sed 's/^QA=//') ;;
+          prod)  val=$(grep -E '^PROD=' "$file" | sed 's/^PROD=//') ;;
+          demo)  val=$(grep -E '^DEMO=' "$file" | sed 's/^DEMO=//') ;;
+          *) echo "::error::env_name inválido: $env_lc"; exit 1 ;;
+        esac
+        echo "APPIAN_BASE_URL=$val" >> "$GITHUB_ENV"
+        if [ -z "${val:-}" ]; then
+          echo "::error::APPIAN_BASE_URL vacío para '$env_lc'"; exit 1
+        fi
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+    - id: make
+      shell: bash
+      env:
+        APPIAN_API_KEY: ${{ env.APPIAN_API_KEY }}
+        APPIAN_BASE_URL: ${{ env.APPIAN_BASE_URL }}
+      run: |
+        set -euo pipefail
+        if [ -n "${APPIAN_API_KEY:-}" ]; then
+          echo "::add-mask::${APPIAN_API_KEY}"
+        fi
+        payload=$(python "${{ github.action_path }}/appian_cli.py" export \
+          --base-url "$APPIAN_BASE_URL" \
+          --api-key "$APPIAN_API_KEY" \
+          --kind "${{ inputs.resource_kind }}" \
+          --rid "${{ inputs.resource_id }}" \
+          --name "${{ inputs.display_name }}" \
+          --outdir artifacts)
+        payload=$(echo "$payload" | tail -n 1 | tr -d '\r')
+        tmp_payload=$(mktemp)
+        printf '%s' "$payload" > "$tmp_payload"
+        export PAYLOAD_FILE="$tmp_payload"
+        python <<'PY'
+        import json
+        import os
+        import sys
+        from pathlib import Path
+
+        payload_path = Path(os.environ['PAYLOAD_FILE'])
+        data = json.loads(payload_path.read_text())
+
+        output_path = Path(os.environ['GITHUB_OUTPUT'])
+        workspace = Path(os.environ['GITHUB_WORKSPACE']).resolve()
+
+        def fail(msg: str) -> None:
+            sys.stderr.write(f"::error::{msg}\n")
+            sys.exit(1)
+
+        def to_rel(path: str) -> str:
+            if not path:
+                return ""
+            p = Path(path).resolve()
+            try:
+                return str(p.relative_to(workspace))
+            except ValueError:
+                return str(p)
+
+        package_path = data.get('package_path', '')
+        if not package_path:
+            fail("appian_cli.py export no devolvió 'package_path'")
+        package_file = Path(package_path)
+        if not package_file.exists():
+            fail(f"No se encontró ZIP exportado en '{package_path}'")
+
+        artifact_dir_raw = data.get('artifact_dir', '')
+        if not artifact_dir_raw:
+            fail("appian_cli.py export no devolvió 'artifact_dir'")
+        artifact_dir = Path(artifact_dir_raw)
+        if not artifact_dir.exists():
+            fail(f"El directorio de artefactos '{artifact_dir_raw}' no existe")
+
+        manifest_path = artifact_dir / 'export-manifest.json'
+        raw_response_path = artifact_dir / 'export-response.json'
+
+        manifest_data = {
+            'artifact_path': to_rel(str(package_file)),
+            'artifact_dir': to_rel(str(artifact_dir)),
+            'deployment_uuid': data.get('deployment_uuid', ''),
+            'deployment_status': data.get('deployment_status', ''),
+            'downloaded_files': [to_rel(p) for p in data.get('downloaded_files', [])],
+            'database_scripts': [
+                {
+                    **entry,
+                    'path': to_rel(entry.get('path', '')),
+                }
+                for entry in data.get('database_scripts', [])
+                if isinstance(entry, dict)
+            ],
+            'plugins_zip': to_rel(data.get('plugins_zip', '')),
+            'customization_file': to_rel(data.get('customization_file', '')),
+            'customization_template': to_rel(data.get('customization_template', '')),
+        }
+
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        manifest_path.write_text(json.dumps(manifest_data, ensure_ascii=False, indent=2), encoding='utf-8')
+        raw_response_path.write_text(json.dumps(data.get('raw_response', {}), ensure_ascii=False, indent=2), encoding='utf-8')
+
+        with output_path.open('a', encoding='utf-8') as fh:
+            fh.write(f"artifact_path={manifest_data['artifact_path']}\n")
+            fh.write(f"artifact_dir={manifest_data['artifact_dir']}\n")
+            fh.write(f"manifest_path={to_rel(str(manifest_path))}\n")
+            fh.write(f"raw_response_path={to_rel(str(raw_response_path))}\n")
+            fh.write(f"deployment_uuid={data.get('deployment_uuid', '')}\n")
+            fh.write(f"deployment_status={data.get('deployment_status', '')}\n")
+        PY
+                rm -f "$tmp_payload"
