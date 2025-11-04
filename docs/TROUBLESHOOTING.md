@@ -23,12 +23,12 @@ Admin Console validation checklist
 - Allow importing Admin Console Settings and plug-ins if used by your deployments.
 - Cross-environment considerations (source vs target) match your governance.
 
-Re-run locally with dummy data
-- Export (dry-run):
-  - `python .github/actions/appian-export/appian_cli.py export --base-url <BASE_URL_DEV> --api-key <API_KEY_DEV> --kind package --rid 00000000-0000-0000-0000-000000000000 --outdir artifacts --dry-run`
-- Promote (dry-run):
-  - `python .github/actions/appian-promote/appian_cli.py import --base-url <BASE_URL_QA> --api-key <API_KEY_QA> --package-path artifacts/fake.zip --dry-run`
-- Inspect (real):
+Re-run locally para aislar problemas
+- Export:
+  - `python .github/actions/appian-export/appian_cli.py export --base-url <BASE_URL_DEV> --api-key <API_KEY_DEV> --kind package --rid 00000000-0000-0000-0000-000000000000 --outdir artifacts`
+- Promote:
+  - `python .github/actions/appian-promote/appian_cli.py import --base-url <BASE_URL_QA> --api-key <API_KEY_QA> --package-path artifacts/<zip_real>.zip`
+- Inspect:
   - `python .github/actions/appian-promote/appian_cli.py inspect --base-url <BASE_URL_QA> --api-key <API_KEY_QA> --package-path /path/to/pkg.zip`
 
 What to attach for Appian Support
@@ -41,4 +41,3 @@ What to attach for Appian Support
 
 Placeholders for redaction
 - Replace values with `<API_KEY>`, `<BASE_URL_ENV>`, `<APP_UUID>`, `<PACKAGE_UUID>`, `<INSPECTION_UUID>`, `<DEPLOYMENT_UUID>`.
-

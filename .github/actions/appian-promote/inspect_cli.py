@@ -20,8 +20,10 @@ def _post_inspection(base_url: str, api_key: str, package_path: Path,
     json_obj = {"packageFileName": package_path.name}
     files = {"packageFileName": package_path}
     if customization_path:
+        json_obj["customizationFileName"] = customization_path.name
         files["customizationFileName"] = customization_path
     if admin_settings_path:
+        json_obj["adminConsoleSettingsFileName"] = admin_settings_path.name
         files["adminConsoleSettingsFileName"] = admin_settings_path
 
     try:

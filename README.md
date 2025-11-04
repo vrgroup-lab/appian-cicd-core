@@ -7,12 +7,12 @@ Repositorio central de CI/CD para Appian. Contiene los workflows reutilizables, 
   - `.github/workflows/promote.yml`: importa/promueve un paquete hacia un entorno objetivo.
 - CoreLib reutilizable:
   - Composite actions:
-    - `.github/actions/appian-export`: wrapper de export (simulado en MVP).
-    - `.github/actions/appian-promote`: wrapper de import/promote (simulado en MVP).
+    - `.github/actions/appian-export`: wrapper de export Appian.
+    - `.github/actions/appian-promote`: wrapper de import/promote Appian.
   - Shell scripts:
     - `scripts/appian_export.sh` y `scripts/appian_promote.sh` (placeholders para futura integración real con API de Appian).
 
-Este MVP no llama APIs reales; genera artefactos simulados para validar la integración entre repos y el paso de `secrets` organizacionales.
+Estas acciones llaman a las APIs de Appian para realizar exportaciones e importaciones reales.
 
 ## Requisitos
 - Secrets de organización disponibles para el runner:
@@ -43,10 +43,6 @@ on:
         type: choice
         options: [dev-to-qa, dev-to-prod, dev-qa-prod]
         default: dev-to-qa
-      dry_run:
-        type: boolean
-        required: false
-        default: false
 
 jobs:
   export:
@@ -57,7 +53,6 @@ jobs:
       deploy_kind: ${{ inputs.deploy_kind }}
       app_uuid: ${{ inputs.app_uuid }} # o usa vars.APP_UUID
       package_name: ${{ inputs.package_name }}
-      dry_run: ${{ inputs.dry_run }}
 
   promote_qa:
     if: ${{ inputs.plan != 'dev-to-prod' }}
@@ -68,7 +63,6 @@ jobs:
       source_env: dev
       target_env: qa
       artifact_name: ${{ needs.export.outputs.artifact_name }}
-      dry_run: ${{ inputs.dry_run }}
 
   promote_prod_direct:
     if: ${{ inputs.plan == 'dev-to-prod' }}
@@ -79,7 +73,6 @@ jobs:
       source_env: dev
       target_env: prod
       artifact_name: ${{ needs.export.outputs.artifact_name }}
-      dry_run: ${{ inputs.dry_run }}
 
   promote_prod_after_qa:
     if: ${{ inputs.plan == 'dev-qa-prod' }}
@@ -90,14 +83,11 @@ jobs:
       source_env: dev
       target_env: prod
       artifact_name: ${{ needs.export.outputs.artifact_name }}
-      dry_run: ${{ inputs.dry_run }}
 ```
 
 Notas:
 - Los workflows del Core resuelven la API key correcta según `env` usando los secrets de organización. No se indexan dinámicamente `secrets.*`; se seleccionan de forma explícita por entorno.
 - `export.yml` sube el ZIP como artifact y, si existen, publica artifacts adicionales para scripts SQL, customization file/template y plugins. Expone `artifact_name`, `artifact_path`, `artifact_dir`, `manifest_path`, `raw_response_path`, `deployment_uuid` y `deployment_status`. `promote.yml` descarga por `artifact_name`.
-- Para pruebas iniciales, `dry_run=true` evita llamadas reales y crea/usa un archivo simulado.
-
 ### Variables/URLs de entornos
 - Define variables (org o repo) con las URLs base de Appian, por ejemplo:
   - `APPIAN_DEV_BASE_URL`, `APPIAN_QA_BASE_URL`, `APPIAN_PROD_BASE_URL` (y `APPIAN_DEMO_BASE_URL` si aplica).

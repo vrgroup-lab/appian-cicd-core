@@ -15,11 +15,10 @@ on:
         description: "Nombre del artifact a descargar"
         required: true
         type: string
-      dry_run:
-        description: "No llama API reales; simula import"
+      data_source:
+        description: "Nombre/UUID del data source para ejecutar scripts de base de datos (opcional)"
         required: false
-        default: false
-        type: boolean
+        type: string
 
 permissions:
   contents: read
@@ -51,6 +50,13 @@ jobs:
           name: ${{ inputs.artifact_name }}
           path: downloaded
 
+      - name: Descargar scripts de base de datos (si existen)
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ format('{0}-db-scripts', inputs.artifact_name) }}
+          path: db-scripts
+        continue-on-error: true
+
       - name: Resolver ruta del paquete
         id: resolve_pkg
         shell: bash
@@ -63,11 +69,27 @@ jobs:
           fi
           echo "path=$found" >> "$GITHUB_OUTPUT"
 
+      - name: Resolver scripts de base de datos
+        id: resolve_db_scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="db-scripts"
+          if [ ! -d "$dir" ]; then
+            exit 0
+          fi
+          first=$(find "$dir" -type f \( -iname '*.sql' -o -iname '*.ddl' \) -print -quit || true)
+          if [ -z "$first" ]; then
+            exit 0
+          fi
+          abs_dir="$(cd "$dir" && pwd)"
+          echo "path=$abs_dir" >> "$GITHUB_OUTPUT"
+
       - name: Promover paquete
-        uses: vrgroup-lab/appian-cicd-core/.github/actions/appian-promote@develop
+        uses: vrgroup-lab/appian-cicd-core/.github/actions/appian-promote@icfbuild
         with:
           source_env: ${{ inputs.source_env }}
           target_env: ${{ inputs.target_env }}
           package_path: ${{ steps.resolve_pkg.outputs.path }}
-          dry_run: ${{ inputs.dry_run }}
-
+          data_source: ${{ inputs.data_source }}
+          db_scripts_path: ${{ steps.resolve_db_scripts.outputs.path }}

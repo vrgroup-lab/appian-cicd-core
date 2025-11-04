@@ -11,10 +11,23 @@ inputs:
   package_path:
     description: Ruta del paquete a importar (zip)
     required: true
-  dry_run:
-    description: Si es true, no llama APIs y simula import
+  icf_path:
+    description: Ruta al ICF (import customization file) opcional
     required: false
-    default: 'false'
+  data_source:
+    description: Nombre o UUID del data source para ejecutar scripts de base de datos (opcional)
+    required: false
+  db_scripts_path:
+    description: Directorio con scripts SQL/DDL a ejecutar (opcional)
+    required: false
+
+outputs:
+  deployment_status:
+    description: Estado final reportado por Appian
+    value: ${{ steps.import.outputs.deployment_status }}
+  deployment_uuid:
+    description: UUID del deployment en Appian
+    value: ${{ steps.import.outputs.deployment_uuid }}
 
 runs:
   using: composite
@@ -58,7 +71,7 @@ runs:
       with:
         python-version: '3.x'
     - name: Inspect package
-      if: inputs.dry_run != 'true' && env.APPIAN_PROMOTE_ENABLE_INSPECTION == 'true'
+      if: env.APPIAN_PROMOTE_ENABLE_INSPECTION == 'true'
       shell: bash
       env:
         APPIAN_API_KEY_TARGET: ${{ env.APPIAN_API_KEY_TARGET }}
@@ -66,12 +79,19 @@ runs:
       run: |
         set -euo pipefail
         echo "::add-mask::${APPIAN_API_KEY_TARGET:-}"
-        python "${{ github.action_path }}/appian_cli.py" inspect \
-          --base-url "$APPIAN_BASE_URL" \
-          --api-key "$APPIAN_API_KEY_TARGET" \
+        cmd=(
+          python "${{ github.action_path }}/appian_cli.py" inspect
+          --base-url "$APPIAN_BASE_URL"
+          --api-key "$APPIAN_API_KEY_TARGET"
           --package-path "${{ inputs.package_path }}"
+        )
+        if [ -n "${{ inputs.icf_path }}" ]; then
+          cmd+=(--icf-path "${{ inputs.icf_path }}")
+        fi
+        "${cmd[@]}"
 
     - name: Import package
+      id: import
       shell: bash
       env:
         APPIAN_API_KEY_TARGET: ${{ env.APPIAN_API_KEY_TARGET }}
@@ -79,8 +99,45 @@ runs:
       run: |
         set -euo pipefail
         echo "::add-mask::${APPIAN_API_KEY_TARGET:-}"
-        python "${{ github.action_path }}/appian_cli.py" import \
-          --base-url "$APPIAN_BASE_URL" \
-          --api-key "$APPIAN_API_KEY_TARGET" \
-          --package-path "${{ inputs.package_path }}" \
-          $([ "${{ inputs.dry_run }}" = "true" ] && echo --dry-run || true)
+        out_json="$RUNNER_TEMP/appian-promote-import.json"
+        cmd=(
+          python "${{ github.action_path }}/appian_cli.py" import
+          --base-url "$APPIAN_BASE_URL"
+          --api-key "$APPIAN_API_KEY_TARGET"
+          --package-path "${{ inputs.package_path }}"
+          --json-output "$out_json"
+        )
+        if [ -n "${{ inputs.icf_path }}" ]; then
+          cmd+=(--icf-path "${{ inputs.icf_path }}")
+        fi
+        if [ -n "${{ inputs.data_source }}" ]; then
+          cmd+=(--data-source "${{ inputs.data_source }}")
+        fi
+        if [ -n "${{ inputs.db_scripts_path }}" ]; then
+          cmd+=(--db-scripts-dir "${{ inputs.db_scripts_path }}")
+        fi
+        "${cmd[@]}"
+        status=""
+        uuid=""
+        if [ -f "$out_json" ]; then
+          readarray -t parsed < <(OUT_JSON="$out_json" python - <<'PY'
+        import json, os, sys
+        path = os.environ.get("OUT_JSON", "")
+        data = {}
+        if path:
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    data = json.load(fh)
+            except Exception:
+                data = {}
+        for key in ("status", "uuid"):
+            sys.stdout.write(str(data.get(key, "")) + "\n")
+        PY
+        )
+                  if [ "${#parsed[@]}" -ge 1 ]; then status="${parsed[0]}"; fi
+                  if [ "${#parsed[@]}" -ge 2 ]; then uuid="${parsed[1]}"; fi
+                fi
+                {
+                  echo "deployment_status=$status"
+                  echo "deployment_uuid=$uuid"
+                } >> "$GITHUB_OUTPUT"

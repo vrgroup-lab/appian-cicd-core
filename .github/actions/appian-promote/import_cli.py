@@ -5,7 +5,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, List, Tuple
 
 # Soportar ejecución directa del script
 if __package__ is None:  # pragma: no cover
@@ -17,10 +17,15 @@ except Exception:  # fallback when running as loose scripts
     from utils import _multipart_form
 
 
+DbScriptSpec = Tuple[Path, str, Optional[int]]
+
+
 def _post_import(base_url: str, api_key: str, name: str, description: str, package_path: Path,
                  customization_path: Optional[Path] = None,
                  admin_settings_path: Optional[Path] = None,
-                 plugins_zip: Optional[Path] = None) -> dict:
+                 plugins_zip: Optional[Path] = None,
+                 data_source: Optional[str] = None,
+                 db_scripts: Optional[List[DbScriptSpec]] = None) -> dict:
     url = f"{base_url.rstrip('/')}/suite/deployment-management/v2/deployments"
     json_obj: dict = {
         "name": name,
@@ -38,6 +43,18 @@ def _post_import(base_url: str, api_key: str, name: str, description: str, packa
     if plugins_zip:
         json_obj["pluginsFileName"] = plugins_zip.name
         files["pluginsFileName"] = plugins_zip
+    if data_source:
+        json_obj["dataSource"] = data_source
+    if db_scripts:
+        payload_scripts = []
+        for idx, (script_path, script_name, order_id) in enumerate(db_scripts, start=1):
+            fname = script_name or script_path.name
+            order_value = order_id if order_id is not None else idx
+            payload_scripts.append({"fileName": fname, "orderId": str(order_value)})
+            files[f"databaseScript{idx}"] = (script_path, fname)
+        if payload_scripts:
+            json_obj["databaseScripts"] = payload_scripts
+            log(f"Payload incluye {len(payload_scripts)} database scripts; dataSource={data_source or '(ninguno)'}")
 
     body, ctype = _multipart_form(json_obj, files)
     headers = {
@@ -86,15 +103,14 @@ def _get_deployment_log(base_url: str, api_key: str, dep_uuid: str) -> str:
         return raw.decode("latin-1", "ignore")
 
 
-def import_package(base_url: str, api_key: str, package_path: Path, dry_run: bool,
+def import_package(base_url: str, api_key: str, package_path: Path,
                    customization_path: Optional[Path] = None,
                    admin_settings_path: Optional[Path] = None,
                    plugins_zip: Optional[Path] = None,
+                   data_source: Optional[str] = None,
+                   db_scripts: Optional[List[DbScriptSpec]] = None,
                    name: Optional[str] = None,
-                   description: str = ""):
-    if dry_run:
-        log("[dry_run] Simulando import; no se llama API")
-        return
+                   description: str = "") -> Dict[str, object]:
     if not package_path.exists():
         raise FileNotFoundError(f"No existe el paquete: {package_path}")
 
@@ -115,6 +131,10 @@ def import_package(base_url: str, api_key: str, package_path: Path, dry_run: boo
         raise FileNotFoundError(f"No existe admin console settings: {admin_settings_path}")
     if plugins_zip and not plugins_zip.exists():
         raise FileNotFoundError(f"No existe plugins zip: {plugins_zip}")
+    if db_scripts:
+        for script_path, _, _ in db_scripts:
+            if not script_path.exists():
+                raise FileNotFoundError(f"No existe database script: {script_path}")
 
     max_wait_s = int(os.environ.get("APPIAN_PROMOTE_MAX_WAIT", "1800"))
     interval_s = int(os.environ.get("APPIAN_PROMOTE_POLL_INTERVAL", "5"))
@@ -122,7 +142,18 @@ def import_package(base_url: str, api_key: str, package_path: Path, dry_run: boo
     dep_name = name or f"Import {package_path.name}"
     dep_desc = description
     log("Iniciando import del paquete…")
-    dep = _post_import(base_url, api_key, dep_name, dep_desc, package_path, customization_path, admin_settings_path, plugins_zip)
+    dep = _post_import(
+        base_url,
+        api_key,
+        dep_name,
+        dep_desc,
+        package_path,
+        customization_path,
+        admin_settings_path,
+        plugins_zip,
+        data_source,
+        db_scripts,
+    )
     dep_uuid = dep.get("uuid")
     dep_url = dep.get("url")
     if not dep_uuid:
@@ -178,6 +209,7 @@ def import_package(base_url: str, api_key: str, package_path: Path, dry_run: boo
 
     objs = (summary.get("objects") or {})
     log(f"Import OK: objects.imported={objs.get('imported')} failed={objs.get('failed')} skipped={objs.get('skipped')}")
+    return {"status": final_status, "uuid": dep_uuid or "", "deployment": final or {}}
 
 
 def main():
@@ -190,7 +222,6 @@ def main():
     p.add_argument("--plugins-zip", default="")
     p.add_argument("--name", default="")
     p.add_argument("--description", default="")
-    p.add_argument("--dry-run", action="store_true")
     args = p.parse_args()
 
     customization = Path(args.customization_path).resolve() if args.customization_path else None
@@ -202,7 +233,6 @@ def main():
         args.base_url,
         args.api_key,
         Path(args.package_path),
-        args.dry_run,
         customization,
         admin_settings,
         plugins,

@@ -15,11 +15,6 @@ def log(msg: str):
     print(msg, file=sys.stderr, flush=True)
 
 
-def write_fake_zip(path: Path):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(b"fake binary")
-
-
 def http_json(method: str, url: str, headers: dict, body: dict | None = None):
     data = None if body is None else json.dumps(body).encode("utf-8")
     req = Request(url, data=data, method=method)
@@ -238,7 +233,7 @@ def _download_optional_file(url: Optional[Any], base_url: str, api_key: str, des
     return _download_binary(safe_url, api_key, dest, accept=accept)
 
 
-def export_resource(base_url: str, api_key: str, kind: str, resource_id: str, out_path: Path, dry_run: bool) -> Dict[str, Any]:
+def export_resource(base_url: str, api_key: str, kind: str, resource_id: str, out_path: Path) -> Dict[str, Any]:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     package_abs = str(out_path.resolve())
     artifact_dir = str(out_path.resolve().parent)
@@ -254,13 +249,6 @@ def export_resource(base_url: str, api_key: str, kind: str, resource_id: str, ou
         "deployment_status": "",
         "raw_response": {},
     }
-
-    if dry_run:
-        log("[dry_run] Simulando export; no se llama API")
-        write_fake_zip(out_path)
-        result["downloaded_files"].append(package_abs)
-        result["deployment_status"] = "DRY_RUN"
-        return result
 
     start = _post_export_start(base_url, api_key, kind, resource_id)
     dep_uuid = start.get("uuid")
@@ -342,7 +330,6 @@ def main():
     pe.add_argument("--rid", required=True, help="resource_id")
     pe.add_argument("--name", default="", help="nombre amigable para archivo")
     pe.add_argument("--outdir", default="artifacts")
-    pe.add_argument("--dry-run", action="store_true")
 
     args = p.parse_args()
 
@@ -351,7 +338,7 @@ def main():
         nm = args.name or args.rid
         fname = f"{args.kind}-{args.rid}-{nm}.zip"
         out_path = Path(args.outdir) / fname
-        info = export_resource(args.base_url, args.api_key, args.kind, args.rid, out_path, args.dry_run)
+        info = export_resource(args.base_url, args.api_key, args.kind, args.rid, out_path)
         print(json.dumps(info))
 
 

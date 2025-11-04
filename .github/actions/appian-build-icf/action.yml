@@ -1,0 +1,58 @@
+name: appian-build-icf
+description: Construye un ICF efímero fusionando overrides YAML + JSON sensibles
+
+inputs:
+  template_path:
+    description: Ruta al template .properties base
+    required: true
+  map_path:
+    description: Ruta a YAML con overrides no sensibles (opcional)
+    required: false
+  env:
+    description: Entorno objetivo (dev|qa|prod)
+    required: true
+  out_path:
+    description: Ruta destino del ICF generado
+    required: true
+
+outputs:
+  icf_path:
+    description: Ruta del archivo ICF generado
+    value: ${{ steps.build.outputs.icf_path }}
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+
+    - name: Instalar dependencias
+      shell: bash
+      run: |
+        set -euo pipefail
+        python -m pip install --upgrade pip
+        python -m pip install pyyaml
+
+    - name: Construir ICF efímero
+      id: build
+      shell: bash
+      env:
+        ICF_JSON_OVERRIDES: ${{ env.ICF_JSON_OVERRIDES }}
+      run: |
+        set -euo pipefail
+        map_path="${{ inputs.map_path }}"
+        args=(
+          "${{ github.action_path }}/icf_build.py"
+          --template "${{ inputs.template_path }}"
+          --env "${{ inputs.env }}"
+          --out "${{ inputs.out_path }}"
+        )
+        if [ -n "${map_path}" ]; then
+          args+=(--map "${map_path}")
+        fi
+        python "${args[@]}"
+        OUT_PATH="${{ inputs.out_path }}"
+        resolved=$(OUT_PATH="$OUT_PATH" python -c 'from pathlib import Path; import os; print(Path(os.environ["OUT_PATH"]).resolve())')
+        echo "icf_path=$resolved" >> "$GITHUB_OUTPUT"
