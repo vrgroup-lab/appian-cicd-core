@@ -23,22 +23,22 @@ inputs:
 outputs:
   artifact_path:
     description: Ruta relativa del ZIP exportado
-    value: ${{ steps.export.outputs.artifact_path }}
+    value: ${{ steps.process.outputs.artifact_path }}
   artifact_dir:
     description: Directorio relativo que contiene los artefactos
-    value: ${{ steps.export.outputs.artifact_dir }}
+    value: ${{ steps.process.outputs.artifact_dir }}
   manifest_path:
     description: Ruta relativa al manifest con metadatos de la exportación
-    value: ${{ steps.export.outputs.manifest_path }}
+    value: ${{ steps.process.outputs.manifest_path }}
   raw_response_path:
     description: Ruta relativa al archivo con la respuesta cruda de Appian
-    value: ${{ steps.export.outputs.raw_response_path }}
+    value: ${{ steps.process.outputs.raw_response_path }}
   deployment_uuid:
     description: UUID del deployment de export en Appian
-    value: ${{ steps.export.outputs.deployment_uuid }}
+    value: ${{ steps.process.outputs.deployment_uuid }}
   deployment_status:
     description: Estado final reportado por Appian para la exportación
-    value: ${{ steps.export.outputs.deployment_status }}
+    value: ${{ steps.process.outputs.deployment_status }}
   artifact_name:
     description: Nombre del artifact subido
     value: ${{ steps.metadata.outputs.artifact_name }}
@@ -111,7 +111,7 @@ runs:
           --package-uuid "${{ steps.package.outputs.package_uuid }}" \
           --app-name "${{ inputs.app_name }}"
 
-    - id: export
+    - id: cli
       name: Ejecutar export
       shell: bash
       env:
@@ -122,96 +122,25 @@ runs:
         if [ -n "${APPIAN_API_KEY:-}" ]; then
           echo "::add-mask::${APPIAN_API_KEY}"
         fi
-        payload=$(python "${{ github.action_path }}/appian_cli.py" export \
+        out_json="$RUNNER_TEMP/appian-export.json"
+        python "${{ github.action_path }}/appian_cli.py" export \
           --base-url "$APPIAN_BASE_URL" \
           --api-key "$APPIAN_API_KEY" \
           --kind "${{ steps.resource.outputs.resource_kind }}" \
           --rid "${{ steps.resource.outputs.resource_id }}" \
           --name "${{ steps.resource.outputs.display_name }}" \
-          --outdir artifacts)
-        payload=$(echo "$payload" | tail -n 1 | tr -d '\r')
-        tmp_payload=$(mktemp)
-        printf '%s' "$payload" > "$tmp_payload"
-        export PAYLOAD_FILE="$tmp_payload"
-        python <<'PY'
-        import json
-        import os
-        import sys
-        from pathlib import Path
+          --outdir artifacts > "$out_json"
+        echo "payload_path=$out_json" >> "$GITHUB_OUTPUT"
 
-        payload_path = Path(os.environ['PAYLOAD_FILE'])
-        data = json.loads(payload_path.read_text())
-
-        output_path = Path(os.environ['GITHUB_OUTPUT'])
-        workspace = Path(os.environ['GITHUB_WORKSPACE']).resolve()
-
-        def fail(msg: str) -> None:
-            sys.stderr.write(f"::error::{msg}\n")
-            sys.exit(1)
-
-        def to_rel(path: str) -> str:
-            if not path:
-                return ""
-            p = Path(path).resolve()
-            try:
-                return str(p.relative_to(workspace))
-            except ValueError:
-                return str(p)
-
-        package_path = data.get('package_path', '')
-        if not package_path:
-            fail("appian_cli.py export no devolvió 'package_path'")
-        package_file = Path(package_path)
-        if not package_file.exists():
-            fail(f"No se encontró ZIP exportado en '{package_path}'")
-
-        artifact_dir_raw = data.get('artifact_dir', '')
-        if not artifact_dir_raw:
-            fail("appian_cli.py export no devolvió 'artifact_dir'")
-        artifact_dir = Path(artifact_dir_raw)
-        if not artifact_dir.exists():
-            fail(f"El directorio de artefactos '{artifact_dir_raw}' no existe")
-
-        manifest_path = artifact_dir / 'export-manifest.json'
-        raw_response_path = artifact_dir / 'export-response.json'
-
-        manifest_data = {
-            'artifact_path': to_rel(str(package_file)),
-            'artifact_dir': to_rel(str(artifact_dir)),
-            'deployment_uuid': data.get('deployment_uuid', ''),
-            'deployment_status': data.get('deployment_status', ''),
-            'downloaded_files': [to_rel(p) for p in data.get('downloaded_files', [])],
-            'database_scripts': [
-                {
-                    **entry,
-                    'path': to_rel(entry.get('path', '')),
-                }
-                for entry in data.get('database_scripts', [])
-                if isinstance(entry, dict)
-            ],
-            'plugins_zip': to_rel(data.get('plugins_zip', '')),
-            'customization_file': to_rel(data.get('customization_file', '')),
-            'customization_template': to_rel(data.get('customization_template', '')),
-        }
-
-        manifest_path.parent.mkdir(parents=True, exist_ok=True)
-        manifest_path.write_text(
-            json.dumps(manifest_data, ensure_ascii=False, indent=2), encoding='utf-8'
-        )
-        raw_response_path.write_text(
-            json.dumps(data.get('raw_response', {}), ensure_ascii=False, indent=2),
-            encoding='utf-8',
-        )
-
-        with output_path.open('a', encoding='utf-8') as fh:
-            fh.write(f"artifact_path={manifest_data['artifact_path']}\n")
-            fh.write(f"artifact_dir={manifest_data['artifact_dir']}\n")
-            fh.write(f"manifest_path={to_rel(str(manifest_path))}\n")
-            fh.write(f"raw_response_path={to_rel(str(raw_response_path))}\n")
-            fh.write(f"deployment_uuid={data.get('deployment_uuid', '')}\n")
-            fh.write(f"deployment_status={data.get('deployment_status', '')}\n")
-        PY
-        rm -f "$tmp_payload"
+    - id: process
+      name: Procesar artefactos
+      shell: bash
+      env:
+        PAYLOAD_PATH: ${{ steps.cli.outputs.payload_path }}
+      run: |
+        set -euo pipefail
+        python3 "${{ github.action_path }}/scripts/export_postprocess.py" \
+          --payload-file "${PAYLOAD_PATH}"
 
     - id: metadata
       name: Calcular nombre de artifact
@@ -219,8 +148,62 @@ runs:
       run: |
         set -euo pipefail
         python3 "${{ github.action_path }}/scripts/artifact_name.py" \
-          --artifact-path "${{ steps.export.outputs.artifact_path }}" \
+          --artifact-path "${{ steps.process.outputs.artifact_path }}" \
           --deploy-kind "${{ steps.resource.outputs.resource_kind }}" \
           --resource-id "${{ steps.resource.outputs.resource_id }}" \
           --package-name "${{ inputs.package_name }}" \
           --app-name "${{ inputs.app_name }}"
+
+    - name: Subir paquete exportado (ZIP)
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ steps.metadata.outputs.artifact_name }}
+        path: ${{ steps.process.outputs.artifact_path }}
+        if-no-files-found: error
+        retention-days: 5
+
+    - name: Subir metadata de exportación
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ steps.metadata.outputs.artifact_name }}-meta
+        path: |
+          ${{ steps.process.outputs.manifest_path }}
+          ${{ steps.process.outputs.raw_response_path }}
+        if-no-files-found: error
+        retention-days: 5
+
+    - name: Subir scripts de base de datos
+      if: ${{ steps.process.outputs.artifact_dir != '' && hashFiles(format('{0}/db-scripts/**', steps.process.outputs.artifact_dir)) != '' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ steps.metadata.outputs.artifact_name }}-db-scripts
+        path: ${{ steps.process.outputs.artifact_dir }}/db-scripts
+        if-no-files-found: error
+        retention-days: 5
+
+    - name: Subir customization file
+      if: ${{ steps.process.outputs.artifact_dir != '' && hashFiles(format('{0}/customization/customization.properties', steps.process.outputs.artifact_dir)) != '' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ steps.metadata.outputs.artifact_name }}-customization
+        path: ${{ steps.process.outputs.artifact_dir }}/customization/customization.properties
+        if-no-files-found: error
+        retention-days: 5
+
+    - name: Subir customization template
+      if: ${{ steps.process.outputs.artifact_dir != '' && hashFiles(format('{0}/customization/customization-template.properties', steps.process.outputs.artifact_dir)) != '' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ steps.metadata.outputs.artifact_name }}-customization-template
+        path: ${{ steps.process.outputs.artifact_dir }}/customization/customization-template.properties
+        if-no-files-found: error
+        retention-days: 5
+
+    - name: Subir plugins ZIP
+      if: ${{ steps.process.outputs.artifact_dir != '' && hashFiles(format('{0}/plugins/plugins.zip', steps.process.outputs.artifact_dir)) != '' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ steps.metadata.outputs.artifact_name }}-plugins
+        path: ${{ steps.process.outputs.artifact_dir }}/plugins/plugins.zip
+        if-no-files-found: error
+        retention-days: 5
