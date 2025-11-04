@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
+"""CLI helpers to resolve Appian package UUIDs by name."""
+
 import argparse
 import json
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
-from urllib.error import URLError, HTTPError
 
 
 def http_json(method: str, url: str, headers: dict):
+    """Perform an HTTP request and parse a JSON response."""
     req = Request(url, method=method)
     for k, v in headers.items():
         req.add_header(k, v)
@@ -14,17 +17,20 @@ def http_json(method: str, url: str, headers: dict):
             raw = resp.read()
             return json.loads(raw.decode("utf-8"))
     except HTTPError as e:
-        raise RuntimeError(f"HTTP {e.code} on {url}: {e.read().decode('utf-8', 'ignore')}") from e
+        message = e.read().decode("utf-8", "ignore")
+        raise RuntimeError(f"HTTP {e.code} on {url}: {message}") from e
     except URLError as e:
         raise RuntimeError(f"Network error on {url}: {e}") from e
 
 
 def resolve_package_uuid(base_url: str, api_key: str, app_uuid: str, package_name: str) -> str:
+    """Resolve the UUID for a package by calling the Appian Deployment Management API."""
     url = f"{base_url.rstrip('/')}/suite/deployment-management/v2/applications/{app_uuid}/packages"
     headers = {"appian-api-key": api_key, "Accept": "application/json"}
     data = http_json("GET", url, headers)
     pkgs = data.get("packages", []) or []
-    # Prefer exact (case-insensitive), fallback to contains; packages are already sorted by lastModified desc
+    # Prefer exact (case-insensitive), fallback to substring.
+    # Appian already sorts by lastModified desc.
     name_ci = package_name.strip().lower()
     exact = [p for p in pkgs if str(p.get("name", "")).strip().lower() == name_ci]
     if exact:
@@ -36,6 +42,7 @@ def resolve_package_uuid(base_url: str, api_key: str, app_uuid: str, package_nam
 
 
 def main():
+    """Entry-point for CLI execution."""
     p = argparse.ArgumentParser()
     sub = p.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("resolve", help="Resuelve UUID de package por nombre")

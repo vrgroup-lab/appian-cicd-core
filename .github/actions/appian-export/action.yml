@@ -2,65 +2,117 @@ name: appian-export (MVP)
 description: Exporta recurso Appian (app o package) y descarga los artefactos asociados
 
 inputs:
-  env_name:
-    description: Entorno Appian (solo para logging)
+  env:
+    description: Entorno Appian (dev|qa|prod|demo)
     required: true
-  resource_kind:
-    description: Tipo de recurso a exportar (app|application|package)
+  deploy_kind:
+    description: Tipo de recurso a exportar (app|package)
     required: true
-  resource_id:
-    description: UUID del recurso (app_uuid o package_uuid)
+  app_uuid:
+    description: UUID de la aplicación origen
     required: true
-  display_name:
-    description: Nombre amigable para nombrar el archivo (opcional)
+  package_name:
+    description: Nombre del paquete (para deploy_kind=package)
+    required: false
+    default: ''
+  app_name:
+    description: Nombre amigable de la aplicación (opcional, para naming)
     required: false
     default: ''
 
 outputs:
   artifact_path:
     description: Ruta relativa del ZIP exportado
-    value: ${{ steps.make.outputs.artifact_path }}
+    value: ${{ steps.export.outputs.artifact_path }}
   artifact_dir:
     description: Directorio relativo que contiene los artefactos
-    value: ${{ steps.make.outputs.artifact_dir }}
+    value: ${{ steps.export.outputs.artifact_dir }}
   manifest_path:
     description: Ruta relativa al manifest con metadatos de la exportación
-    value: ${{ steps.make.outputs.manifest_path }}
+    value: ${{ steps.export.outputs.manifest_path }}
   raw_response_path:
     description: Ruta relativa al archivo con la respuesta cruda de Appian
-    value: ${{ steps.make.outputs.raw_response_path }}
+    value: ${{ steps.export.outputs.raw_response_path }}
   deployment_uuid:
     description: UUID del deployment de export en Appian
-    value: ${{ steps.make.outputs.deployment_uuid }}
+    value: ${{ steps.export.outputs.deployment_uuid }}
   deployment_status:
     description: Estado final reportado por Appian para la exportación
-    value: ${{ steps.make.outputs.deployment_status }}
+    value: ${{ steps.export.outputs.deployment_status }}
+  artifact_name:
+    description: Nombre del artifact subido
+    value: ${{ steps.metadata.outputs.artifact_name }}
 
 runs:
   using: composite
   steps:
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+
+    - name: Resolver API key
+      shell: bash
+      run: |
+        set -euo pipefail
+        python3 "${{ github.action_path }}/../appian-promote/scripts/resolve_api_key.py" \
+          --env-name "${{ inputs.env }}" \
+          --env-var-name "APPIAN_API_KEY" \
+          --skip-if-present
+
     - name: Resolver APPIAN_BASE_URL desde config del Core
       shell: bash
       run: |
         set -euo pipefail
         file="${{ github.action_path }}/../_config/appian_base_urls.env"
-        env_lc='${{ inputs.env_name }}'; env_lc="${env_lc,,}"
+        env_in='${{ inputs.env }}'
+        env_lc="${env_in,,}"
         case "$env_lc" in
           dev)   val=$(grep -E '^DEV='  "$file" | sed 's/^DEV=//') ;;
           qa)    val=$(grep -E '^QA='   "$file" | sed 's/^QA=//') ;;
           prod)  val=$(grep -E '^PROD=' "$file" | sed 's/^PROD=//') ;;
           demo)  val=$(grep -E '^DEMO=' "$file" | sed 's/^DEMO=//') ;;
-          *) echo "::error::env_name inválido: $env_lc"; exit 1 ;;
+          *) echo "::error::env inválido: $env_in"; exit 1 ;;
         esac
         echo "APPIAN_BASE_URL=$val" >> "$GITHUB_ENV"
         if [ -z "${val:-}" ]; then
-          echo "::error::APPIAN_BASE_URL vacío para '$env_lc'"; exit 1
+          echo "::error::APPIAN_BASE_URL vacío para '$env_in'"; exit 1
         fi
-    - name: Setup Python
-      uses: actions/setup-python@v5
+
+    - id: resource_init
+      name: Resolver recurso a exportar
+      shell: bash
+      run: |
+        set -euo pipefail
+        python3 "${{ github.action_path }}/scripts/resource_resolver.py" \
+          --deploy-kind "${{ inputs.deploy_kind }}" \
+          --app-uuid "${{ inputs.app_uuid }}" \
+          --package-name "${{ inputs.package_name }}" \
+          --app-name "${{ inputs.app_name }}"
+
+    - id: package
+      if: ${{ steps.resource_init.outputs.needs_lookup == 'true' }}
+      name: Resolver UUID del paquete
+      uses: ./.github/actions/appian-resolve-package
       with:
-        python-version: '3.x'
-    - id: make
+        env_name: ${{ inputs.env }}
+        app_uuid: ${{ inputs.app_uuid }}
+        package_name: ${{ inputs.package_name }}
+
+    - id: resource
+      name: Finalizar datos del recurso
+      shell: bash
+      run: |
+        set -euo pipefail
+        python3 "${{ github.action_path }}/scripts/resource_resolver.py" \
+          --deploy-kind "${{ inputs.deploy_kind }}" \
+          --app-uuid "${{ inputs.app_uuid }}" \
+          --package-name "${{ inputs.package_name }}" \
+          --package-uuid "${{ steps.package.outputs.package_uuid }}" \
+          --app-name "${{ inputs.app_name }}"
+
+    - id: export
+      name: Ejecutar export
       shell: bash
       env:
         APPIAN_API_KEY: ${{ env.APPIAN_API_KEY }}
@@ -73,9 +125,9 @@ runs:
         payload=$(python "${{ github.action_path }}/appian_cli.py" export \
           --base-url "$APPIAN_BASE_URL" \
           --api-key "$APPIAN_API_KEY" \
-          --kind "${{ inputs.resource_kind }}" \
-          --rid "${{ inputs.resource_id }}" \
-          --name "${{ inputs.display_name }}" \
+          --kind "${{ steps.resource.outputs.resource_kind }}" \
+          --rid "${{ steps.resource.outputs.resource_id }}" \
+          --name "${{ steps.resource.outputs.display_name }}" \
           --outdir artifacts)
         payload=$(echo "$payload" | tail -n 1 | tr -d '\r')
         tmp_payload=$(mktemp)
@@ -143,8 +195,13 @@ runs:
         }
 
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
-        manifest_path.write_text(json.dumps(manifest_data, ensure_ascii=False, indent=2), encoding='utf-8')
-        raw_response_path.write_text(json.dumps(data.get('raw_response', {}), ensure_ascii=False, indent=2), encoding='utf-8')
+        manifest_path.write_text(
+            json.dumps(manifest_data, ensure_ascii=False, indent=2), encoding='utf-8'
+        )
+        raw_response_path.write_text(
+            json.dumps(data.get('raw_response', {}), ensure_ascii=False, indent=2),
+            encoding='utf-8',
+        )
 
         with output_path.open('a', encoding='utf-8') as fh:
             fh.write(f"artifact_path={manifest_data['artifact_path']}\n")
@@ -154,4 +211,16 @@ runs:
             fh.write(f"deployment_uuid={data.get('deployment_uuid', '')}\n")
             fh.write(f"deployment_status={data.get('deployment_status', '')}\n")
         PY
-                rm -f "$tmp_payload"
+        rm -f "$tmp_payload"
+
+    - id: metadata
+      name: Calcular nombre de artifact
+      shell: bash
+      run: |
+        set -euo pipefail
+        python3 "${{ github.action_path }}/scripts/artifact_name.py" \
+          --artifact-path "${{ steps.export.outputs.artifact_path }}" \
+          --deploy-kind "${{ steps.resource.outputs.resource_kind }}" \
+          --resource-id "${{ steps.resource.outputs.resource_id }}" \
+          --package-name "${{ inputs.package_name }}" \
+          --app-name "${{ inputs.app_name }}"

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""CLI that orchestrates Appian export operations and artifact downloads."""
+
 import argparse
 import json
 import os
@@ -11,11 +13,13 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
-def log(msg: str):
+def log(msg: str) -> None:
+    """Emit a log line to stderr (surfaced in GitHub Actions logs)."""
     print(msg, file=sys.stderr, flush=True)
 
 
 def http_json(method: str, url: str, headers: dict, body: dict | None = None):
+    """HTTP helper that returns JSON or raw payloads depending on the response."""
     data = None if body is None else json.dumps(body).encode("utf-8")
     req = Request(url, data=data, method=method)
     for k, v in headers.items():
@@ -29,13 +33,22 @@ def http_json(method: str, url: str, headers: dict, body: dict | None = None):
             if "application/json" in ct:
                 return json.loads(raw.decode("utf-8"))
             return raw
-    except HTTPError as e:
-        raise RuntimeError(f"HTTP {e.code} on {url}: {e.read().decode('utf-8', 'ignore')}") from e
+    except HTTPError as exc:
+        message = exc.read().decode("utf-8", "ignore")
+        raise RuntimeError(f"HTTP {exc.code} on {url}: {message}") from exc
     except URLError as e:
         raise RuntimeError(f"Network error on {url}: {e}") from e
 
 
-def _post_export_start(base_url: str, api_key: str, kind: str, resource_id: str, name: str | None = None, description: str | None = None) -> dict:
+def _post_export_start(
+    base_url: str,
+    api_key: str,
+    kind: str,
+    resource_id: str,
+    name: str | None = None,
+    description: str | None = None,
+) -> dict:
+    """Kick off an export deployment and return the deployment metadata."""
     # Build multipart/form-data with a single 'json' field
     url = f"{base_url.rstrip('/')}/suite/deployment-management/v2/deployments"
     boundary = f"----appianboundary{int(time.time())}"
@@ -68,14 +81,23 @@ def _post_export_start(base_url: str, api_key: str, kind: str, resource_id: str,
         with urlopen(req, timeout=60) as resp:
             raw = resp.read()
             return json.loads(raw.decode("utf-8"))
-    except HTTPError as e:
-        raise RuntimeError(f"HTTP {e.code} on export start: {e.read().decode('utf-8', 'ignore')}") from e
+    except HTTPError as exc:
+        message = exc.read().decode("utf-8", "ignore")
+        raise RuntimeError(f"HTTP {exc.code} on export start: {message}") from exc
     except URLError as e:
         raise RuntimeError(f"Network error on export start: {e}") from e
 
 
-def _get_deployment_status(base_url: str, api_key: str, dep_uuid: str, url_hint: str | None = None) -> dict:
-    url = url_hint or f"{base_url.rstrip('/')}/suite/deployment-management/v2/deployments/{dep_uuid}"
+def _get_deployment_status(
+    base_url: str,
+    api_key: str,
+    dep_uuid: str,
+    url_hint: str | None = None,
+) -> dict:
+    """Fetch the current export deployment status."""
+    url = url_hint or (
+        f"{base_url.rstrip('/')}/suite/deployment-management/v2/deployments/{dep_uuid}"
+    )
     req = Request(url, method="GET")
     req.add_header("appian-api-key", api_key)
     req.add_header("Accept", "application/json")
@@ -83,13 +105,15 @@ def _get_deployment_status(base_url: str, api_key: str, dep_uuid: str, url_hint:
         with urlopen(req, timeout=60) as resp:
             raw = resp.read()
             return json.loads(raw.decode("utf-8"))
-    except HTTPError as e:
-        raise RuntimeError(f"HTTP {e.code} on status: {e.read().decode('utf-8', 'ignore')}") from e
+    except HTTPError as exc:
+        message = exc.read().decode("utf-8", "ignore")
+        raise RuntimeError(f"HTTP {exc.code} on status: {message}") from exc
     except URLError as e:
         raise RuntimeError(f"Network error on status: {e}") from e
 
 
 def _attempt_download(url: str, api_key: str, out_path: Path) -> bool:
+    """Try downloading a ZIP payload from the provided URL."""
     req = Request(url, method="GET")
     req.add_header("appian-api-key", api_key)
     req.add_header("Accept", "application/zip")
@@ -105,39 +129,51 @@ def _attempt_download(url: str, api_key: str, out_path: Path) -> bool:
                 out_path.write_bytes(data)
                 return True
             return False
-    except HTTPError as e:
+    except HTTPError:
         # 404/400: probamos siguiente candidato
         return False
     except URLError:
         return False
 
 
-def _download_package_from_results(base_url: str, api_key: str, results: dict, dep_uuid: str, status_url: str | None, out_path: Path):
-    base = base_url.rstrip('/')
+def _download_package_from_results(
+    base_url: str,
+    api_key: str,
+    results: dict,
+    dep_uuid: str,
+    status_url: str | None,
+    out_path: Path,
+) -> None:
+    """Download the package ZIP using hints returned by Appian."""
+    base = base_url.rstrip("/")
     candidates: list[str] = []
     # Preferir el campo explícito devuelto por v2
     pkg = results.get("packageZip")
     if isinstance(pkg, str) and pkg:
-        candidates.append(pkg.rstrip('/'))
+        candidates.append(pkg.rstrip("/"))
     # Variantes comunes por si falta barra
     if isinstance(pkg, str) and pkg:
-        p = pkg.rstrip('/')
+        p = pkg.rstrip("/")
         if not p.endswith("/package-zip"):
             candidates.append(p + "/package-zip")
     # Fallbacks conocidos
     if status_url:
-        s = status_url.rstrip('/')
-        candidates.extend([
-            f"{s}/package-zip",
-            f"{s}/package",
-            f"{s}/download",
-            f"{s}?download=true",
-        ])
-    candidates.extend([
-        f"{base}/suite/deployment-management/v2/deployments/{dep_uuid}/package-zip",
-        f"{base}/suite/deployment-management/v2/deployments/{dep_uuid}/package",
-        f"{base}/suite/deployment-management/v2/deployments/{dep_uuid}/download",
-    ])
+        s = status_url.rstrip("/")
+        candidates.extend(
+            [
+                f"{s}/package-zip",
+                f"{s}/package",
+                f"{s}/download",
+                f"{s}?download=true",
+            ]
+        )
+    candidates.extend(
+        [
+            f"{base}/suite/deployment-management/v2/deployments/{dep_uuid}/package-zip",
+            f"{base}/suite/deployment-management/v2/deployments/{dep_uuid}/package",
+            f"{base}/suite/deployment-management/v2/deployments/{dep_uuid}/download",
+        ]
+    )
     tried: list[str] = []
     for u in candidates:
         if not u:
@@ -145,34 +181,38 @@ def _download_package_from_results(base_url: str, api_key: str, results: dict, d
         tried.append(u)
         if _attempt_download(u, api_key, out_path):
             return
-    raise RuntimeError("No se pudo descargar el ZIP de export. URLs probadas: " + "; ".join(tried))
+    joined = "; ".join(tried)
+    raise RuntimeError(f"No se pudo descargar el ZIP de export. URLs probadas: {joined}")
 
 
 def _ensure_absolute_url(base_url: str, url: str) -> str:
+    """Return an absolute URL using the base when the API response provides relative paths."""
     if not url:
         return url
     if url.startswith("http://") or url.startswith("https://"):
         return url
-    if url.startswith('/'):
+    if url.startswith("/"):
         return f"{base_url.rstrip('/')}{url}"
     return f"{base_url.rstrip('/')}/{url}"
 
 
 def _sanitize_filename(name: str, fallback: str) -> str:
+    """Normalize filenames downloaded from Appian to prevent path traversal."""
     base = Path(name).name.strip()
     if not base:
         base = fallback
-    base = base.replace('\x00', '')
+    base = base.replace("\x00", "")
     # Reemplazamos cualquier caracter no alfanumérico relevante para evitar path traversal
     base = re.sub(r"[^A-Za-z0-9._-]+", "_", base)
     if not base:
         base = fallback
-    if base.startswith('.'):
+    if base.startswith("."):
         base = f"_{base.lstrip('.')}"
     return base
 
 
 def _download_binary(url: str, api_key: str, out_path: Path, accept: Optional[str] = None) -> str:
+    """Download a binary resource and return the absolute path on disk."""
     req = Request(url, method="GET")
     req.add_header("appian-api-key", api_key)
     if accept:
@@ -180,8 +220,9 @@ def _download_binary(url: str, api_key: str, out_path: Path, accept: Optional[st
     try:
         with urlopen(req, timeout=180) as resp:
             data = resp.read()
-    except HTTPError as e:
-        raise RuntimeError(f"HTTP {e.code} al descargar recurso ({url}): {e.read().decode('utf-8', 'ignore')}") from e
+    except HTTPError as exc:
+        message = exc.read().decode("utf-8", "ignore")
+        raise RuntimeError(f"HTTP {exc.code} al descargar recurso ({url}): {message}") from exc
     except URLError as e:
         raise RuntimeError(f"Network error al descargar recurso ({url}): {e}") from e
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -189,7 +230,13 @@ def _download_binary(url: str, api_key: str, out_path: Path, accept: Optional[st
     return str(out_path.resolve())
 
 
-def _download_database_scripts(base_url: str, api_key: str, results: Dict[str, Any], out_dir: Path) -> List[Dict[str, Any]]:
+def _download_database_scripts(
+    base_url: str,
+    api_key: str,
+    results: Dict[str, Any],
+    out_dir: Path,
+) -> List[Dict[str, Any]]:
+    """Download optional database scripts exposed by the export API."""
     scripts: List[Dict[str, Any]] = []
     entries = results.get("databaseScripts") or []
     if not isinstance(entries, list):
@@ -217,23 +264,39 @@ def _download_database_scripts(base_url: str, api_key: str, results: Dict[str, A
             order_int = None
         dest = target_dir / f"{prefix}{safe_name}"
         path = _download_binary(safe_url, api_key, dest)
-        scripts.append({
-            "path": path,
-            "fileName": original_name,
-            "orderId": order if isinstance(order, int) else order_int,
-            "url": safe_url,
-        })
+        scripts.append(
+            {
+                "path": path,
+                "fileName": original_name,
+                "orderId": order if isinstance(order, int) else order_int,
+                "url": safe_url,
+            }
+        )
     return scripts
 
 
-def _download_optional_file(url: Optional[Any], base_url: str, api_key: str, dest: Path, accept: Optional[str] = None) -> str:
+def _download_optional_file(
+    url: Optional[Any],
+    base_url: str,
+    api_key: str,
+    dest: Path,
+    accept: Optional[str] = None,
+) -> str:
+    """Helper to conditionally download optional resources."""
     if not url:
         return ""
     safe_url = _ensure_absolute_url(base_url, str(url))
     return _download_binary(safe_url, api_key, dest, accept=accept)
 
 
-def export_resource(base_url: str, api_key: str, kind: str, resource_id: str, out_path: Path) -> Dict[str, Any]:
+def export_resource(
+    base_url: str,
+    api_key: str,
+    kind: str,
+    resource_id: str,
+    out_path: Path,
+) -> Dict[str, Any]:
+    """Orchestrate the export flow and gather downloadable assets."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
     package_abs = str(out_path.resolve())
     artifact_dir = str(out_path.resolve().parent)
@@ -296,19 +359,34 @@ def export_resource(base_url: str, api_key: str, kind: str, resource_id: str, ou
         downloaded.extend([entry["path"] for entry in db_scripts])
 
     plugins_dest = base_dir / "plugins" / "plugins.zip"
-    plugins_path = _download_optional_file(final_payload.get("pluginsZip"), base_url, api_key, plugins_dest)
+    plugins_path = _download_optional_file(
+        final_payload.get("pluginsZip"),
+        base_url,
+        api_key,
+        plugins_dest,
+    )
     if plugins_path:
         result["plugins_zip"] = plugins_path
         downloaded.append(plugins_path)
 
     customization_dest = base_dir / "customization" / "customization.properties"
-    customization_path = _download_optional_file(final_payload.get("customizationFile"), base_url, api_key, customization_dest)
+    customization_path = _download_optional_file(
+        final_payload.get("customizationFile"),
+        base_url,
+        api_key,
+        customization_dest,
+    )
     if customization_path:
         result["customization_file"] = customization_path
         downloaded.append(customization_path)
 
     customization_template_dest = base_dir / "customization" / "customization-template.properties"
-    customization_template_path = _download_optional_file(final_payload.get("customizationFileTemplate"), base_url, api_key, customization_template_dest)
+    customization_template_path = _download_optional_file(
+        final_payload.get("customizationFileTemplate"),
+        base_url,
+        api_key,
+        customization_template_dest,
+    )
     if customization_template_path:
         result["customization_template"] = customization_template_path
         downloaded.append(customization_template_path)
@@ -318,7 +396,8 @@ def export_resource(base_url: str, api_key: str, kind: str, resource_id: str, ou
     return result
 
 
-def main():
+def main() -> None:
+    """CLI entry-point."""
     p = argparse.ArgumentParser()
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -338,7 +417,13 @@ def main():
         nm = args.name or args.rid
         fname = f"{args.kind}-{args.rid}-{nm}.zip"
         out_path = Path(args.outdir) / fname
-        info = export_resource(args.base_url, args.api_key, args.kind, args.rid, out_path)
+        info = export_resource(
+            args.base_url,
+            args.api_key,
+            args.kind,
+            args.rid,
+            out_path,
+        )
         print(json.dumps(info))
 
 

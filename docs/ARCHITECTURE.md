@@ -3,8 +3,8 @@
 This Core repo provides a centralized integration to Appian Deployment Management v2. It supports a two‑repository model where application code lives in app‑specific repos, while promotion mechanics and API logic live here.
 
 Two‑repo model
-- App repo: owns the application, packaging logic, and invokes reusable workflows from the Core via `workflow_call`.
-- Core repo (this): exposes reusable workflows, composite actions, and CLIs that encapsulate Appian API calls, polling, retries, and error handling.
+- App repo: owns the application, packaging logic, and invoca directamente las composite actions del Core.
+- Core repo (este): expone composite actions y CLIs que encapsulan llamadas Appian, polling, retries y manejo de errores.
 
 Boundaries and configuration
 - Base URLs: `.github/actions/_config/appian_base_urls.env`.
@@ -18,25 +18,25 @@ Boundaries and configuration
 sequenceDiagram
   autonumber
   participant AppRepo as App Repo (Wrapper)
-  participant CoreWF as Core Workflows
+  participant CoreActions as Core Actions
   participant Appian as Appian API v2
 
-  AppRepo->>CoreWF: Call export.yml (env=dev)
-  CoreWF->>Appian: POST /deployments (Action-Type: export)
-  CoreWF-->>Appian: Poll GET /deployments/{uuid}
-  Appian-->>CoreWF: status=COMPLETED, packageZip
-  CoreWF->>AppRepo: Upload artifact ZIP
+  AppRepo->>CoreActions: Usa appian-export (env=dev)
+  CoreActions->>Appian: POST /deployments (Action-Type: export)
+  CoreActions-->>Appian: Poll GET /deployments/{uuid}
+  Appian-->>CoreActions: status=COMPLETED, packageZip
+  CoreActions->>AppRepo: Upload artifact ZIP
 
-  AppRepo->>CoreWF: Call promote.yml (target=qa)
-  CoreWF->>Appian: (optional) POST /inspections
-  CoreWF-->>Appian: Poll GET /inspections/{uuid}
-  Appian-->>CoreWF: status=COMPLETED
-  CoreWF->>Appian: POST /deployments (Action-Type: import)
-  CoreWF-->>Appian: Poll GET /deployments/{uuid}
-  Appian-->>CoreWF: status=COMPLETED
+  AppRepo->>CoreActions: Usa appian-promote (target=qa)
+  CoreActions->>Appian: (optional) POST /inspections
+  CoreActions-->>Appian: Poll GET /inspections/{uuid}
+  Appian-->>CoreActions: status=COMPLETED
+  CoreActions->>Appian: POST /deployments (Action-Type: import)
+  CoreActions-->>Appian: Poll GET /deployments/{uuid}
+  Appian-->>CoreActions: status=COMPLETED
 
-  AppRepo->>CoreWF: Call promote.yml (target=prod)
-  CoreWF->>Appian: (optional) inspect, then import
+  AppRepo->>CoreActions: Usa appian-promote (target=prod)
+  CoreActions->>Appian: (optional) inspect, then import
 ```
 
 
@@ -93,4 +93,3 @@ Implementation references
 - Deployment GET: `.github/actions/appian-promote/import_cli.py:73`
 - Log GET: `.github/actions/appian-promote/import_cli.py:80`
 - Status handling: `.github/actions/appian-promote/import_cli.py:133`
-

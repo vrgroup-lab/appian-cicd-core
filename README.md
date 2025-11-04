@@ -1,23 +1,21 @@
 # appian-cicd-core
-Repositorio central de CI/CD para Appian. Contiene los workflows reutilizables, librerías de automatización y scripts base para orquestar la exportación, inspección e importación de aplicaciones Appian entre entornos (Dev → QA → Prod), integrados con GitHub Actions y APIs de Appian.
+Repositorio central de CI/CD para Appian. Provee composite actions reutilizables y
+utilidades que orquestan la exportación, inspección e importación de aplicaciones Appian
+entre entornos (Dev → QA → Prod), integrados con GitHub Actions y las Deployment APIs de Appian.
 
 **MVP del Core**
-- Workflows reutilizables (`workflow_call`):
-  - `.github/workflows/export.yml`: exporta app o package desde un entorno Appian y publica ZIP + artefactos auxiliares (scripts SQL, customization file/template, plugins) cuando están disponibles.
-  - `.github/workflows/promote.yml`: importa/promueve un paquete hacia un entorno objetivo.
-- CoreLib reutilizable:
-  - Composite actions:
-    - `.github/actions/appian-export`: wrapper de export Appian.
-    - `.github/actions/appian-promote`: wrapper de import/promote Appian.
-  - Shell scripts:
-    - `scripts/appian_export.sh` y `scripts/appian_promote.sh` (placeholders para futura integración real con API de Appian).
-
-Estas acciones llaman a las APIs de Appian para realizar exportaciones e importaciones reales.
+- Composite actions:
+  - `.github/actions/appian-export`: wrapper de export Appian que descarga artefactos y expone metadata.
+  - `.github/actions/appian-promote`: wrapper de import/promote Appian con inspección opcional.
+  - `.github/actions/appian-build-icf`: genera ICF efímeros con overrides seguros.
+  - `.github/actions/appian-prepare-db-scripts`: descarga scripts SQL y produce metadata.
+  - `.github/actions/appian-resolve-package`: resuelve UUID de package por nombre dentro de una app.
+- CLIs Python internos ejecutan las llamadas reales a Appian (ver carpeta de cada acción).
 
 ## Requisitos
 - Secrets de organización disponibles para el runner:
   - `APPIAN_DEV_API_KEY`, `APPIAN_QA_API_KEY`, `APPIAN_PROD_API_KEY`, `APPIAN_DEMO_API_KEY` (opcional si se usa).
-- Repos sandbox “wrapper” que invocan a estos workflows con `secrets: inherit`.
+- Repos sandbox “wrapper” que invocan a estas acciones y proveen las keys vía `env`.
 
 ## Cómo usar desde un repo Sandbox
 Ejemplo de wrapper `deploy.yml` que permite elegir despliegue por `app` o `package`, resolver el paquete por nombre, y elegir el plan de promoción (Dev→QA, Dev→Prod o Dev→QA→Prod). El Sandbox puede leer `vars.APP_UUID` y pasarlo como `app_uuid`.
@@ -46,57 +44,72 @@ on:
 
 jobs:
   export:
-    uses: <org>/<repo-core>/.github/workflows/export.yml@develop
-    secrets: inherit
-    with:
-      env: dev
-      deploy_kind: ${{ inputs.deploy_kind }}
-      app_uuid: ${{ inputs.app_uuid }} # o usa vars.APP_UUID
-      package_name: ${{ inputs.package_name }}
+    runs-on: ubuntu-latest
+    env:
+      APPIAN_DEV_API_KEY: ${{ secrets.APPIAN_DEV_API_KEY }}
+      APPIAN_QA_API_KEY: ${{ secrets.APPIAN_QA_API_KEY }}
+      APPIAN_PROD_API_KEY: ${{ secrets.APPIAN_PROD_API_KEY }}
+      APPIAN_DEMO_API_KEY: ${{ secrets.APPIAN_DEMO_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: <org>/<repo-core>/.github/actions/appian-export@main
+        id: export
+        with:
+          env: dev
+          deploy_kind: ${{ inputs.deploy_kind }}
+          app_uuid: ${{ inputs.app_uuid }}
+          package_name: ${{ inputs.package_name }}
 
   promote_qa:
     if: ${{ inputs.plan != 'dev-to-prod' }}
     needs: export
-    uses: <org>/<repo-core>/.github/workflows/promote.yml@develop
-    secrets: inherit
-    with:
-      source_env: dev
-      target_env: qa
-      artifact_name: ${{ needs.export.outputs.artifact_name }}
+    runs-on: ubuntu-latest
+    env:
+      APPIAN_DEV_API_KEY: ${{ secrets.APPIAN_DEV_API_KEY }}
+      APPIAN_QA_API_KEY: ${{ secrets.APPIAN_QA_API_KEY }}
+      APPIAN_PROD_API_KEY: ${{ secrets.APPIAN_PROD_API_KEY }}
+      APPIAN_DEMO_API_KEY: ${{ secrets.APPIAN_DEMO_API_KEY }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.export.outputs.artifact_name }}
+          path: downloaded
+      - name: Resolver ZIP
+        id: package
+        run: |
+          set -euo pipefail
+          path=$(find downloaded -type f -name '*.zip' -print -quit)
+          echo "path=$path" >> "$GITHUB_OUTPUT"
+      - uses: <org>/<repo-core>/.github/actions/appian-prepare-db-scripts@main
+        id: prepare
+        with:
+          artifact-name: ${{ needs.export.outputs.artifact_name }}
+      - uses: <org>/<repo-core>/.github/actions/appian-promote@main
+        with:
+          source_env: dev
+          target_env: qa
+          package_path: ${{ steps.package.outputs.path }}
+          db_scripts_path: ${{ steps.prepare.outputs.db_scripts_path }}
+          data_source: ${{ steps.prepare.outputs.data_source }}
 
   promote_prod_direct:
     if: ${{ inputs.plan == 'dev-to-prod' }}
     needs: export
-    uses: <org>/<repo-core>/.github/workflows/promote.yml@develop
-    secrets: inherit
-    with:
-      source_env: dev
-      target_env: prod
-      artifact_name: ${{ needs.export.outputs.artifact_name }}
+    # Reutilizar los steps de promote_qa con target_env=prod
 
   promote_prod_after_qa:
     if: ${{ inputs.plan == 'dev-qa-prod' }}
     needs: promote_qa
-    uses: <org>/<repo-core>/.github/workflows/promote.yml@develop
-    secrets: inherit
-    with:
-      source_env: dev
-      target_env: prod
-      artifact_name: ${{ needs.export.outputs.artifact_name }}
+    # Reutilizar los steps de promote_qa para promover a prod
 ```
 
 Notas:
-- Los workflows del Core resuelven la API key correcta según `env` usando los secrets de organización. No se indexan dinámicamente `secrets.*`; se seleccionan de forma explícita por entorno.
-- `export.yml` sube el ZIP como artifact y, si existen, publica artifacts adicionales para scripts SQL, customization file/template y plugins. Expone `artifact_name`, `artifact_path`, `artifact_dir`, `manifest_path`, `raw_response_path`, `deployment_uuid` y `deployment_status`. `promote.yml` descarga por `artifact_name`.
+- Las acciones resuelven la API key correcta a partir de `APPIAN_<ENV>_API_KEY`, por lo que el caller debe exportar esas variables (con `secrets.*` o `vars.*`).
+- `appian-export` sube el ZIP original más artifacts adicionales (scripts SQL, customization, plugins) y expone `artifact_name`, `artifact_path`, `artifact_dir`, `manifest_path`, `raw_response_path`, `deployment_uuid` y `deployment_status`.
 ### Variables/URLs de entornos
 - Define variables (org o repo) con las URLs base de Appian, por ejemplo:
   - `APPIAN_DEV_BASE_URL`, `APPIAN_QA_BASE_URL`, `APPIAN_PROD_BASE_URL` (y `APPIAN_DEMO_BASE_URL` si aplica).
 - El Core las resuelve a `APPIAN_BASE_URL` en tiempo de ejecución según el `env`/`target_env` seleccionado.
-
-## Aprobaciones por entorno
-- Define en el repo Sandbox los environments `qa` y `prod` con reviewers requeridos.
-- El workflow `promote.yml` del Core marca `environment: <target_env>`, por lo que el gating/approval se aplica en el Sandbox al promover a `qa` o `prod`.
-- `export.yml` no define environment (sin approvals de exportación).
 
 ## Roadmap de la integración real (siguiente iteración)
 - Implementar llamadas a Appian Deployment API en los scripts (auth, export, inspect, import).
