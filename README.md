@@ -17,6 +17,12 @@ entre entornos (Dev → QA → Prod), integrados con GitHub Actions y las Deploy
   - `APPIAN_DEV_API_KEY`, `APPIAN_QA_API_KEY`, `APPIAN_PROD_API_KEY`, `APPIAN_DEMO_API_KEY` (opcional si se usa).
 - Repos sandbox “wrapper” que invocan a estas acciones y proveen las keys vía `env`.
 
+### Formato de `ICF_JSON_OVERRIDES`
+- `appian-build-icf` espera que los secretos `ICF_JSON_OVERRIDES_*` contengan texto plano con pares `clave=valor`.
+- Cada línea puede estar vacía o comenzar con `#` (comentario); sólo las líneas con `=` son válidas y se normalizan a `\n`.
+- El primer `=` separa la clave del valor; el resto se mantiene literal para permitir contraseñas con dicho caracter.
+- Aún se acepta JSON plano que empiece con `{`, pero se considera *deprecated* y se emite un `::notice::`.
+
 ## Cómo usar desde un repo Sandbox
 Ejemplo de wrapper `deploy.yml` que permite elegir despliegue por `app` o `package`, resolver el paquete por nombre, y elegir el plan de promoción (Dev→QA, Dev→Prod o Dev→QA→Prod). El Sandbox puede leer `vars.APP_UUID` y pasarlo como `app_uuid`.
 
