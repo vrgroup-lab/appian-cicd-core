@@ -1,34 +1,61 @@
-# Workflows and Actions
+# Reusable Actions
 
-This repository exposes reusable workflows and composite actions that implement the promotion flow.
+Este repositorio ahora expone únicamente composite actions. Los pipelines wrapper deben
+referenciar directamente estas acciones (sin workflows intermedios).
 
-Reusable workflows
-- `.github/workflows/export.yml`: exports una aplicación/paquete desde un entorno, descarga todos los recursos asociados (ZIP principal, scripts SQL, customization file/template, plugins) y los publica como artifacts.
-- `.github/workflows/promote.yml`: downloads a ZIP artifact and imports it into the target environment.
-- `.github/workflows/check-org-secret.yml`: utility to verify presence of required organization secrets.
+Principales composites
+- `.github/actions/appian-export`: exporta aplicaciones o packages, descarga artefactos
+  asociados (ZIP, scripts SQL, customization, plug-ins) y expone rutas via outputs.
+- `.github/actions/appian-promote`: realiza inspección opcional e importación del paquete
+  en el entorno destino.
+- `.github/actions/appian-build-icf`: genera ICF efímeros tomando overrides YAML + JSON.
+- `.github/actions/appian-prepare-db-scripts`: descarga y procesa scripts de base de datos
+  junto con su metadata.
+- `.github/actions/appian-resolve-package`: resuelve el UUID de un package por nombre.
 
-Composite actions
-- `.github/actions/appian-export`: calls Appian export (multipart POST with `Action-Type: export`), polls, and downloads the ZIP.
-- `.github/actions/appian-promote`: orchestrates optional inspection and import.
-- `.github/actions/appian-resolve-package`: resolves a package UUID by name in an application.
-
-Mapping steps to CLIs
+Scripts internos
+- Export CLI: `.github/actions/appian-export/appian_cli.py`
+- Resolve helper: `.github/actions/appian-export/scripts/resource_resolver.py`
+- Promote CLI: `.github/actions/appian-promote/appian_cli.py`
 - Inspect CLI: `.github/actions/appian-promote/inspect_cli.py`
 - Import CLI: `.github/actions/appian-promote/import_cli.py`
-- Promote entrypoint (dispatches to inspect/import): `.github/actions/appian-promote/appian_cli.py`
-- Export CLI: `.github/actions/appian-export/appian_cli.py`
 
-Workflow inputs/outputs (summary)
-- export.yml (workflow_call)
-  - inputs: `env`, `deploy_kind`, `app_uuid`, `package_name` (opcional), `app_name` (opcional)
-  - outputs: `artifact_name`, `artifact_path`, `artifact_dir`, `manifest_path`, `raw_response_path`, `deployment_uuid`, `deployment_status`
-- promote.yml (workflow_call)
-  - inputs: `source_env`, `target_env`, `artifact_name`
+Uso típico en repos wrapper
+- Exportar:
+  ```yaml
+  - uses: vrgroup-lab/appian-cicd-core/.github/actions/appian-export@<tag>
+    with:
+      env: dev
+      deploy_kind: app
+      app_uuid: ${{ vars.APPIAN_APP_UUID }}
+      app_name: MyApp
+    env:
+      APPIAN_DEV_API_KEY: ${{ secrets.APPIAN_DEV_API_KEY }}
+      APPIAN_QA_API_KEY: ${{ secrets.APPIAN_QA_API_KEY }}
+      APPIAN_PROD_API_KEY: ${{ secrets.APPIAN_PROD_API_KEY }}
+      APPIAN_DEMO_API_KEY: ${{ secrets.APPIAN_DEMO_API_KEY }}
+  ```
+- Preparar scripts + promover:
+  ```yaml
+  - uses: vrgroup-lab/appian-cicd-core/.github/actions/appian-prepare-db-scripts@<tag>
+    with:
+      artifact-name: ${{ needs.export.outputs.artifact_name }}
 
-Conditions and environments
-- `promote.yml` sets `environment: <target_env>` so approvals and protection rules apply in the caller repo.
+  - uses: vrgroup-lab/appian-cicd-core/.github/actions/appian-promote@<tag>
+    with:
+      source_env: dev
+      target_env: qa
+      package_path: ${{ steps.package.outputs.path }}
+      db_scripts_path: ${{ steps.prepare.outputs.db_scripts_path }}
+      data_source: ${{ steps.prepare.outputs.data_source }}
+    env:
+      APPIAN_DEV_API_KEY: ${{ secrets.APPIAN_DEV_API_KEY }}
+      APPIAN_QA_API_KEY: ${{ secrets.APPIAN_QA_API_KEY }}
+      APPIAN_PROD_API_KEY: ${{ secrets.APPIAN_PROD_API_KEY }}
+      APPIAN_DEMO_API_KEY: ${{ secrets.APPIAN_DEMO_API_KEY }}
+  ```
 
-
-Configuration resolution
-- Base URLs resolved from `.github/actions/_config/appian_base_urls.env` inside actions.
-- API keys sourced from GitHub Secrets based on `env/target_env` selection.
+Resolución de configuración
+- Las URLs base provienen de `.github/actions/_config/appian_base_urls.env`.
+- Las API keys se resuelven a partir de variables de entorno `APPIAN_<ENV>_API_KEY`
+  que el repositorio llamador debe inyectar (normalmente `secrets.*`).

@@ -1,18 +1,27 @@
 #!/usr/bin/env python3
+"""Shared utilities for Appian promotion scripts."""
+
 import json
 import sys
 import uuid as _uuid
 from pathlib import Path
-from typing import Dict, Tuple, Optional, Union
+from typing import Dict, Optional, Tuple, Union
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
-from urllib.error import URLError, HTTPError
 
 
-def log(msg: str):
+def log(msg: str) -> None:
+    """Emit a log line compatible with GitHub Actions."""
     print(msg, flush=True, file=sys.stderr)
 
 
-def _http(method: str, url: str, headers: dict, data: bytes | None = None, timeout: int = 60) -> Tuple[bytes, Dict[str, str]]:
+def _http(
+    method: str,
+    url: str,
+    headers: dict,
+    data: bytes | None = None,
+    timeout: int = 60,
+) -> Tuple[bytes, Dict[str, str]]:
     req = Request(url, data=data, method=method)
     for k, v in headers.items():
         req.add_header(k, v)
@@ -22,7 +31,8 @@ def _http(method: str, url: str, headers: dict, data: bytes | None = None, timeo
             hdrs = {k.lower(): v for k, v in resp.headers.items()}
             return raw, hdrs
     except HTTPError as e:
-        raise RuntimeError(f"HTTP {e.code} on {url}: {e.read().decode('utf-8', 'ignore')}") from e
+        message = e.read().decode("utf-8", "ignore")
+        raise RuntimeError(f"HTTP {e.code} on {url}: {message}") from e
     except URLError as e:
         raise RuntimeError(f"Network error on {url}: {e}") from e
 

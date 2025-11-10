@@ -2,12 +2,11 @@
 
 This repository centralizes reusable CI/CD building blocks for Appian Deployment API v2. It provides composite GitHub Actions, small Python CLIs, and shared configuration to drive a two‑repo promotion model:
 
-- App repos: one per Appian application (export packages, call reusable workflows).
+- App repos: one per Appian application (export packages, call reusable composites).
 - Core repo (this): common actions and CLIs that call Appian APIs (export, inspect+poll, import) and handle logging, retries, and errors.
 
 Key capabilities
-- Reusable workflows: `.github/workflows/export.yml`, `.github/workflows/promote.yml` (export.yml ahora publica el ZIP principal y los artefactos opcionales: scripts SQL, customization file/template y plugins).
-- Composite actions: `.github/actions/appian-export`, `.github/actions/appian-promote`, `.github/actions/appian-resolve-package`.
+- Composite actions: `.github/actions/appian-export`, `.github/actions/appian-promote`, `.github/actions/appian-build-icf`, `.github/actions/appian-prepare-db-scripts`, `.github/actions/appian-resolve-package`.
 - API CLIs: `.github/actions/appian-promote/inspect_cli.py`, `import_cli.py`, `appian_cli.py` and `.github/actions/appian-export/appian_cli.py`.
 - Central config: `.github/actions/_config/appian_base_urls.env` and `appian_promote.env`.
 
@@ -28,13 +27,10 @@ Run locally
   - `python .github/actions/appian-export/appian_cli.py export --base-url <BASE_URL_DEV> --api-key <API_KEY_DEV> --kind package --rid <PACKAGE_UUID> --outdir artifacts`
 
 Run via GitHub Actions (recommended)
-- Wrapper repo calls Core reusable workflows with `secrets: inherit`.
+- Wrapper repo llama directamente a las composite actions del Core (ver ejemplo en `README.md`).
 - Export from Dev, then Promote to QA/Prod:
-  - Use `.github/workflows/export.yml` to publicar el paquete ZIP y, si existen, scripts SQL, customization file/template y plugins como artifacts separados.
-  - Use `.github/workflows/promote.yml` to import that ZIP into the target environment.
-
-Minimal wrapper example
-- See `README.md` (root) for a complete wrapper example. Core workflows resolve API keys and base URLs based on `env`/`target_env` inputs.
+  - Usa `.github/actions/appian-export` para generar y publicar artifacts.
+  - Usa `.github/actions/appian-prepare-db-scripts`, `.github/actions/appian-build-icf` (si aplica) y `.github/actions/appian-promote` para inspeccionar/importar en el entorno destino.
 
 
 ## Where to Look

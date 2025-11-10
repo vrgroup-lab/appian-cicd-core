@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
+"""CLI helper that drives Appian package imports."""
+
 import argparse
 import json
 import os
 import sys
 import time
 from pathlib import Path
-from typing import Optional, Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 # Soportar ejecución directa del script
 if __package__ is None:  # pragma: no cover
@@ -20,12 +22,18 @@ except Exception:  # fallback when running as loose scripts
 DbScriptSpec = Tuple[Path, str, Optional[int]]
 
 
-def _post_import(base_url: str, api_key: str, name: str, description: str, package_path: Path,
-                 customization_path: Optional[Path] = None,
-                 admin_settings_path: Optional[Path] = None,
-                 plugins_zip: Optional[Path] = None,
-                 data_source: Optional[str] = None,
-                 db_scripts: Optional[List[DbScriptSpec]] = None) -> dict:
+def _post_import(
+    base_url: str,
+    api_key: str,
+    name: str,
+    description: str,
+    package_path: Path,
+    customization_path: Optional[Path] = None,
+    admin_settings_path: Optional[Path] = None,
+    plugins_zip: Optional[Path] = None,
+    data_source: Optional[str] = None,
+    db_scripts: Optional[List[DbScriptSpec]] = None,
+) -> dict:
     url = f"{base_url.rstrip('/')}/suite/deployment-management/v2/deployments"
     json_obj: dict = {
         "name": name,
@@ -54,7 +62,11 @@ def _post_import(base_url: str, api_key: str, name: str, description: str, packa
             files[f"databaseScript{idx}"] = (script_path, fname)
         if payload_scripts:
             json_obj["databaseScripts"] = payload_scripts
-            log(f"Payload incluye {len(payload_scripts)} database scripts; dataSource={data_source or '(ninguno)'}")
+            ds_label = data_source or "(ninguno)"
+            log(
+                "Payload incluye "
+                f"{len(payload_scripts)} database scripts; dataSource={ds_label}"
+            )
 
     body, ctype = _multipart_form(json_obj, files)
     headers = {
@@ -86,8 +98,15 @@ def _post_import(base_url: str, api_key: str, name: str, description: str, packa
             raise
 
 
-def _get_deployment(base_url: str, api_key: str, dep_uuid: str, url_hint: Optional[str] = None) -> dict:
-    url = url_hint or f"{base_url.rstrip('/')}/suite/deployment-management/v2/deployments/{dep_uuid}"
+def _get_deployment(
+    base_url: str,
+    api_key: str,
+    dep_uuid: str,
+    url_hint: Optional[str] = None,
+) -> dict:
+    url = url_hint or (
+        f"{base_url.rstrip('/')}/suite/deployment-management/v2/deployments/{dep_uuid}"
+    )
     headers = {"appian-api-key": api_key, "Accept": "application/json"}
     raw, _ = _http("GET", url, headers, timeout=60)
     return json.loads(raw.decode("utf-8"))
@@ -103,14 +122,18 @@ def _get_deployment_log(base_url: str, api_key: str, dep_uuid: str) -> str:
         return raw.decode("latin-1", "ignore")
 
 
-def import_package(base_url: str, api_key: str, package_path: Path,
-                   customization_path: Optional[Path] = None,
-                   admin_settings_path: Optional[Path] = None,
-                   plugins_zip: Optional[Path] = None,
-                   data_source: Optional[str] = None,
-                   db_scripts: Optional[List[DbScriptSpec]] = None,
-                   name: Optional[str] = None,
-                   description: str = "") -> Dict[str, object]:
+def import_package(
+    base_url: str,
+    api_key: str,
+    package_path: Path,
+    customization_path: Optional[Path] = None,
+    admin_settings_path: Optional[Path] = None,
+    plugins_zip: Optional[Path] = None,
+    data_source: Optional[str] = None,
+    db_scripts: Optional[List[DbScriptSpec]] = None,
+    name: Optional[str] = None,
+    description: str = "",
+) -> Dict[str, object]:
     if not package_path.exists():
         raise FileNotFoundError(f"No existe el paquete: {package_path}")
 
@@ -198,7 +221,11 @@ def import_package(base_url: str, api_key: str, package_path: Path,
             log(f"No se pudo obtener deployment log: {e}")
 
     bad_statuses = {"FAILED", "REJECTED"}
-    error_statuses = {"COMPLETED_WITH_ERRORS", "COMPLETED_WITH_IMPORT_ERRORS", "COMPLETED_WITH_PUBLISH_ERRORS"}
+    error_statuses = {
+        "COMPLETED_WITH_ERRORS",
+        "COMPLETED_WITH_IMPORT_ERRORS",
+        "COMPLETED_WITH_PUBLISH_ERRORS",
+    }
 
     if final_status in bad_statuses:
         _print_log()
@@ -208,7 +235,12 @@ def import_package(base_url: str, api_key: str, package_path: Path,
         raise RuntimeError(f"Import completado con errores: status={final_status}")
 
     objs = (summary.get("objects") or {})
-    log(f"Import OK: objects.imported={objs.get('imported')} failed={objs.get('failed')} skipped={objs.get('skipped')}")
+    log(
+        "Import OK: "
+        f"objects.imported={objs.get('imported')} "
+        f"failed={objs.get('failed')} "
+        f"skipped={objs.get('skipped')}"
+    )
     return {"status": final_status, "uuid": dep_uuid or "", "deployment": final or {}}
 
 
@@ -224,20 +256,24 @@ def main():
     p.add_argument("--description", default="")
     args = p.parse_args()
 
-    customization = Path(args.customization_path).resolve() if args.customization_path else None
-    admin_settings = Path(args.admin_settings_path).resolve() if args.admin_settings_path else None
+    customization = (
+        Path(args.customization_path).resolve() if args.customization_path else None
+    )
+    admin_settings = (
+        Path(args.admin_settings_path).resolve() if args.admin_settings_path else None
+    )
     plugins = Path(args.plugins_zip).resolve() if args.plugins_zip else None
     name = args.name or ""
 
     import_package(
-        args.base_url,
-        args.api_key,
-        Path(args.package_path),
-        customization,
-        admin_settings,
-        plugins,
-        name,
-        args.description,
+        base_url=args.base_url,
+        api_key=args.api_key,
+        package_path=Path(args.package_path),
+        customization_path=customization,
+        admin_settings_path=admin_settings,
+        plugins_zip=plugins,
+        name=name or None,
+        description=args.description,
     )
 
 

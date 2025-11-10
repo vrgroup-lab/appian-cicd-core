@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
+"""Command line interface to inspect or import Appian packages."""
+
 import argparse
 import json
+import os
 import re
+import sys
 from pathlib import Path
 from typing import List, Optional
 
 # Permite ejecutar módulos importando utilidades locales
-import sys, os
 if __package__ is None:  # pragma: no cover
     sys.path.append(os.path.dirname(__file__))
 
@@ -48,20 +51,44 @@ def main():
     pins.add_argument("--base-url", required=True)
     pins.add_argument("--api-key", required=True)
     pins.add_argument("--package-path", required=True)
-    pins.add_argument("--customization-path", default="", help="Ruta a .properties (opcional)")
+    pins.add_argument(
+        "--customization-path",
+        default="",
+        help="Ruta a .properties (opcional)",
+    )
     pins.add_argument("--icf-path", default="", help="Alias de customization file")
-    pins.add_argument("--admin-settings-path", default="", help="Ruta a Admin Console Settings .zip (opcional)")
+    pins.add_argument(
+        "--admin-settings-path",
+        default="",
+        help="Ruta a Admin Console Settings .zip (opcional)",
+    )
 
     pimp = sub.add_parser("import", help="Importa/promueve un paquete (sin inspección)")
     pimp.add_argument("--base-url", required=True)
     pimp.add_argument("--api-key", required=True)
     pimp.add_argument("--package-path", required=True)
-    pimp.add_argument("--customization-path", default="", help="Ruta a .properties (opcional)")
+    pimp.add_argument(
+        "--customization-path",
+        default="",
+        help="Ruta a .properties (opcional)",
+    )
     pimp.add_argument("--icf-path", default="", help="Ruta a ICF (alias de customization file)")
-    pimp.add_argument("--admin-settings-path", default="", help="Ruta a Admin Console Settings .zip (opcional)")
+    pimp.add_argument(
+        "--admin-settings-path",
+        default="",
+        help="Ruta a Admin Console Settings .zip (opcional)",
+    )
     pimp.add_argument("--plugins-zip", default="", help="Ruta a ZIP de plug-ins (opcional)")
-    pimp.add_argument("--data-source", default="", help="Nombre o UUID del data source para ejecutar scripts de base de datos (opcional)")
-    pimp.add_argument("--db-scripts-dir", default="", help="Directorio con scripts SQL/DDL a ejecutar (opcional)")
+    pimp.add_argument(
+        "--data-source",
+        default="",
+        help="Nombre o UUID del data source para ejecutar scripts de base de datos (opcional)",
+    )
+    pimp.add_argument(
+        "--db-scripts-dir",
+        default="",
+        help="Directorio con scripts SQL/DDL a ejecutar (opcional)",
+    )
     pimp.add_argument("--name", default="", help="Nombre del deployment (opcional)")
     pimp.add_argument("--description", default="", help="Descripción del deployment (opcional)")
     pimp.add_argument("--json-output", default="", help="Archivo donde guardar status/uuid")
@@ -71,7 +98,9 @@ def main():
     if args.cmd == "inspect":
         customization_arg = args.icf_path or args.customization_path
         customization = Path(customization_arg).resolve() if customization_arg else None
-        admin_settings = Path(args.admin_settings_path).resolve() if args.admin_settings_path else None
+        admin_settings = (
+            Path(args.admin_settings_path).resolve() if args.admin_settings_path else None
+        )
         inspect_package(
             args.base_url,
             args.api_key,
@@ -82,7 +111,9 @@ def main():
     elif args.cmd == "import":
         customization_arg = args.icf_path or args.customization_path
         customization = Path(customization_arg).resolve() if customization_arg else None
-        admin_settings = Path(args.admin_settings_path).resolve() if args.admin_settings_path else None
+        admin_settings = (
+            Path(args.admin_settings_path).resolve() if args.admin_settings_path else None
+        )
         plugins = Path(args.plugins_zip).resolve() if args.plugins_zip else None
         name = args.name or ""
         data_source = args.data_source or ""
@@ -96,28 +127,38 @@ def main():
                 log(f"No se encontraron archivos .sql/.ddl en {db_scripts_dir}")
             else:
                 names = ", ".join(script[1] for script in db_scripts)
-                log(f"Adjuntando {len(db_scripts)} database scripts desde {db_scripts_dir}: {names}")
+                log(
+                    f"Adjuntando {len(db_scripts)} database scripts desde "
+                    f"{db_scripts_dir}: {names}"
+                )
         result = import_package(
-            args.base_url,
-            args.api_key,
-            Path(args.package_path),
-            customization,
-            admin_settings,
-            plugins,
-            data_source if data_source else None,
-            db_scripts if db_scripts else None,
-            name,
-            args.description,
+            base_url=args.base_url,
+            api_key=args.api_key,
+            package_path=Path(args.package_path),
+            customization_path=customization,
+            admin_settings_path=admin_settings,
+            plugins_zip=plugins,
+            data_source=data_source or None,
+            db_scripts=db_scripts or None,
+            name=name or None,
+            description=args.description,
         )
         result = result or {}
         if args.json_output:
             out_path = Path(args.json_output)
             out_path.parent.mkdir(parents=True, exist_ok=True)
-            out_path.write_text(json.dumps({
-                "status": result.get("status", ""),
-                "uuid": result.get("uuid", ""),
-            }), encoding="utf-8")
-        log(f"Import finalizado: status={result.get('status', '')} uuid={result.get('uuid', '')}")
+            payload = json.dumps(
+                {
+                    "status": result.get("status", ""),
+                    "uuid": result.get("uuid", ""),
+                }
+            )
+            out_path.write_text(payload, encoding="utf-8")
+        log(
+            "Import finalizado: "
+            f"status={result.get('status', '')} "
+            f"uuid={result.get('uuid', '')}"
+        )
 
 
 if __name__ == "__main__":

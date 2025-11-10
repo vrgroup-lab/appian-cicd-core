@@ -149,9 +149,11 @@ def build_icf(template_path: Path, map_path: Path | None, env: str, out_path: Pa
 
         if not is_commented:
             if _is_whitelisted(key) and not value_part.strip():
-                raise RuntimeError(
-                    f"La clave '{key}' está descomentada sin valor en el template ({template_path})."
+                msg = (
+                    f"La clave '{key}' está descomentada sin valor en el template "
+                    f"({template_path})."
                 )
+                raise RuntimeError(msg)
             active_values[key] = value_part.strip()
         return line
 
@@ -177,12 +179,12 @@ def build_icf(template_path: Path, map_path: Path | None, env: str, out_path: Pa
     for key in ignored_keys:
         _log(f"::warning::Override para clave '{key}' no se aplicó (no existe en template).")
 
-    _log(
-        (
-            "Overrides procesados: "
-            f"aplicados={len(applied_keys)} agregados={len(appended_keys)} ignorados={len(ignored_keys)}"
-        )
+    summary_msg = (
+        "Overrides procesados: "
+        f"aplicados={len(applied_keys)} agregados={len(appended_keys)} "
+        f"ignorados={len(ignored_keys)}"
     )
+    _log(summary_msg)
 
     if whitelist_ignored:
         joined = ", ".join(whitelist_ignored)

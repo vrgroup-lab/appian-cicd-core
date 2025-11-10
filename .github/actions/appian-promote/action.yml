@@ -32,6 +32,27 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+
+    - name: Resolver API key (target)
+      shell: bash
+      run: |
+        set -euo pipefail
+        python3 "${{ github.action_path }}/scripts/resolve_api_key.py" \
+          --env-name "${{ inputs.target_env }}" \
+          --env-var-name "APPIAN_API_KEY_TARGET" \
+          --skip-if-present
+
+    - name: Exportar metadatos de entorno
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "APPIAN_TARGET_ENV=${{ inputs.target_env }}" >> "$GITHUB_ENV"
+        echo "APPIAN_SOURCE_ENV=${{ inputs.source_env }}" >> "$GITHUB_ENV"
+
     - name: Resolver APPIAN_BASE_URL desde config del Core
       shell: bash
       run: |
@@ -66,10 +87,6 @@ runs:
         else
           echo "APPIAN_PROMOTE_ENABLE_INSPECTION=${APPIAN_PROMOTE_ENABLE_INSPECTION}" >> "$GITHUB_ENV"
         fi
-    - name: Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.x'
     - name: Inspect package
       if: env.APPIAN_PROMOTE_ENABLE_INSPECTION == 'true'
       shell: bash
