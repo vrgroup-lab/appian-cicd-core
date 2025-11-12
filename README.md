@@ -1,119 +1,112 @@
-# appian-cicd-core
-Repositorio central de CI/CD para Appian. Provee composite actions reutilizables y
-utilidades que orquestan la exportación, inspección e importación de aplicaciones Appian
-entre entornos (Dev → QA → Prod), integrados con GitHub Actions y las Deployment APIs de Appian.
+# Appian CI/CD Core
 
-**MVP del Core**
-- Composite actions:
-  - `.github/actions/appian-export`: wrapper de export Appian que descarga artefactos y expone metadata.
-  - `.github/actions/appian-promote`: wrapper de import/promote Appian con inspección opcional.
-  - `.github/actions/appian-build-icf`: genera ICF efímeros con overrides seguros.
-  - `.github/actions/appian-prepare-db-scripts`: descarga scripts SQL y produce metadata.
-  - `.github/actions/appian-resolve-package`: resuelve UUID de package por nombre dentro de una app.
-- CLIs Python internos ejecutan las llamadas reales a Appian (ver carpeta de cada acción).
+Repositorio central del sistema **CI/CD para Appian**, mantenido por el equipo de Automatización y DevOps de **VR Group / Bice Vida**.  
+Implementa la lógica técnica que permite exportar, inspeccionar y promover aplicaciones **Appian** entre entornos (Dev → QA → Prod), integrándose con **GitHub Actions** y la **Appian Deployment REST API**.
 
-## Requisitos
-- Secrets de organización disponibles para el runner:
-  - `APPIAN_DEV_API_KEY`, `APPIAN_QA_API_KEY`, `APPIAN_PROD_API_KEY`, `APPIAN_DEMO_API_KEY` (opcional si se usa).
-- Repos sandbox “wrapper” que invocan a estas acciones y proveen las keys vía `env`.
+---
 
-## Cómo usar desde un repo Sandbox
-Ejemplo de wrapper `deploy.yml` que permite elegir despliegue por `app` o `package`, resolver el paquete por nombre, y elegir el plan de promoción (Dev→QA, Dev→Prod o Dev→QA→Prod). El Sandbox puede leer `vars.APP_UUID` y pasarlo como `app_uuid`.
+## 🔧 Propósito
 
-```yaml
-name: Deploy (wrapper)
-on:
-  workflow_dispatch:
-    inputs:
-      deploy_kind:
-        description: Tipo de despliegue
-        type: choice
-        options: [package, app]
-        default: package
-      app_uuid:
-        description: UUID de la aplicación
-        required: true
-      package_name:
-        description: Nombre del package (si deploy_kind=package y no hay UUID)
-        required: false
-      plan:
-        description: Plan de promoción
-        type: choice
-        options: [dev-to-qa, dev-to-prod, dev-qa-prod]
-        default: dev-to-qa
+El **Core** concentra las acciones reutilizables que gestionan los procesos de despliegue Appian mediante llamadas autenticadas a las APIs oficiales de Appian.  
+Su objetivo es estandarizar los flujos de integración y entrega continua, garantizando seguridad, trazabilidad y consistencia entre entornos.
 
-jobs:
-  export:
-    runs-on: ubuntu-latest
-    env:
-      APPIAN_DEV_API_KEY: ${{ secrets.APPIAN_DEV_API_KEY }}
-      APPIAN_QA_API_KEY: ${{ secrets.APPIAN_QA_API_KEY }}
-      APPIAN_PROD_API_KEY: ${{ secrets.APPIAN_PROD_API_KEY }}
-      APPIAN_DEMO_API_KEY: ${{ secrets.APPIAN_DEMO_API_KEY }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: <org>/<repo-core>/.github/actions/appian-export@main
-        id: export
-        with:
-          env: dev
-          deploy_kind: ${{ inputs.deploy_kind }}
-          app_uuid: ${{ inputs.app_uuid }}
-          package_name: ${{ inputs.package_name }}
+---
 
-  promote_qa:
-    if: ${{ inputs.plan != 'dev-to-prod' }}
-    needs: export
-    runs-on: ubuntu-latest
-    env:
-      APPIAN_DEV_API_KEY: ${{ secrets.APPIAN_DEV_API_KEY }}
-      APPIAN_QA_API_KEY: ${{ secrets.APPIAN_QA_API_KEY }}
-      APPIAN_PROD_API_KEY: ${{ secrets.APPIAN_PROD_API_KEY }}
-      APPIAN_DEMO_API_KEY: ${{ secrets.APPIAN_DEMO_API_KEY }}
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: ${{ needs.export.outputs.artifact_name }}
-          path: downloaded
-      - name: Resolver ZIP
-        id: package
-        run: |
-          set -euo pipefail
-          path=$(find downloaded -type f -name '*.zip' -print -quit)
-          echo "path=$path" >> "$GITHUB_OUTPUT"
-      - uses: <org>/<repo-core>/.github/actions/appian-prepare-db-scripts@main
-        id: prepare
-        with:
-          artifact-name: ${{ needs.export.outputs.artifact_name }}
-      - uses: <org>/<repo-core>/.github/actions/appian-promote@main
-        with:
-          source_env: dev
-          target_env: qa
-          package_path: ${{ steps.package.outputs.path }}
-          db_scripts_path: ${{ steps.prepare.outputs.db_scripts_path }}
-          data_source: ${{ steps.prepare.outputs.data_source }}
+## ⚙️ Funcionalidad principal
 
-  promote_prod_direct:
-    if: ${{ inputs.plan == 'dev-to-prod' }}
-    needs: export
-    # Reutilizar los steps de promote_qa con target_env=prod
+- **Exportación:** genera paquetes `.zip` desde aplicaciones Appian mediante la API `/applications/{uuid}/package`.  
+- **Inspección:** ejecuta validaciones previas sobre dependencias, errores y objetos bloqueados usando `/packages/{uuid}/inspect`.  
+- **Promoción:** importa y despliega artefactos a entornos objetivo con `/deployments`.  
+- **Gestión de ICF:** genera archivos `customization.properties` efímeros en función de los secretos definidos en el repo *wrapper*.  
+- **Preparación SQL:** detecta y normaliza scripts de base de datos incluidos en los paquetes exportados.
 
-  promote_prod_after_qa:
-    if: ${{ inputs.plan == 'dev-qa-prod' }}
-    needs: promote_qa
-    # Reutilizar los steps de promote_qa para promover a prod
+Todas las interacciones se realizan mediante solicitudes REST autenticadas con API Keys organizacionales.
+
+---
+
+## 🧩 Componentes incluidos
+
+- `.github/actions/appian-export` — exporta artefactos Appian desde un entorno origen.  
+- `.github/actions/appian-promote` — promueve paquetes entre entornos con validación y registro.  
+- `.github/actions/appian-build-icf` — genera archivos `customization.properties` temporales con valores seguros.  
+- `.github/actions/appian-prepare-db-scripts` — procesa scripts SQL asociados al despliegue.  
+- `.github/actions/appian-resolve-package` — obtiene identificadores (UUID) de paquetes y aplicaciones.
+
+Cada acción encapsula llamadas REST y devuelve *outputs* normalizados para ser consumidos por los repositorios wrapper.
+
+---
+
+## 🔒 Seguridad y autenticación
+
+- Las **API Keys** (`APPIAN_DEV_API_KEY`, `APPIAN_QA_API_KEY`, `APPIAN_PROD_API_KEY`) se almacenan como **secrets de organización** en GitHub.  
+- Las **URLs base** de los entornos están definidas dentro del Core, en `.github/actions/_config`, y no deben configurarse manualmente en los repos wrapper.  
+- Los valores sensibles nunca se imprimen ni se exponen en logs.
+
+---
+
+## 🌐 Llamadas a la Appian Deployment REST API
+
+El Core interactúa con los siguientes endpoints oficiales de Appian (versión 25.3):
+
+| Acción | Endpoint | Método | Descripción |
+|--------|-----------|--------|--------------|
+| Exportar aplicación | `/suite/webapi/applications/{uuid}/package` | `POST` | Genera un archivo ZIP de la aplicación. |
+| Inspeccionar paquete | `/suite/webapi/packages/{uuid}/inspect` | `POST` | Analiza dependencias y conflictos previos a la importación. |
+| Desplegar paquete | `/suite/webapi/deployments` | `POST` | Importa un paquete a un entorno destino. |
+| Consultar estado | `/suite/webapi/deployments/{id}` | `GET` | Consulta el estado de una importación. |
+
+Cada acción del Core encapsula estos llamados, manejando cabeceras, autenticación, control de errores y trazabilidad de forma uniforme.
+
+Referencia: [Appian Deployment REST API – versión 25.3](https://docs.appian.com/suite/help/25.3/Deployment_Rest_API.html)
+
+---
+
+## 🧾 Gestión de personalización (ICF)
+
+El Core implementa la acción `appian-build-icf`, responsable de construir el archivo `customization.properties` utilizado durante los despliegues Appian.
+
+Este archivo se genera de forma efímera en tiempo de ejecución, a partir de los secretos definidos en el **repositorio wrapper** (por ejemplo, `ICF_OVERRIDES_QA`, `ICF_OVERRIDES_PROD`).
+
+Formato esperado del secreto (texto plano):
+
+```
+connectedSystem.<UUID>.baseUrl=https://example
+connectedSystem.<UUID>.apiKeyValue=AAA
+content.<UUID>.VALUE=10
 ```
 
-Notas:
-- Las acciones resuelven la API key correcta a partir de `APPIAN_<ENV>_API_KEY`, por lo que el caller debe exportar esas variables (con `secrets.*` o `vars.*`).
-- `appian-export` sube el ZIP original más artifacts adicionales (scripts SQL, customization, plugins) y expone `artifact_name`, `artifact_path`, `artifact_dir`, `manifest_path`, `raw_response_path`, `deployment_uuid` y `deployment_status`.
-### Variables/URLs de entornos
-- Define variables (org o repo) con las URLs base de Appian, por ejemplo:
-  - `APPIAN_DEV_BASE_URL`, `APPIAN_QA_BASE_URL`, `APPIAN_PROD_BASE_URL` (y `APPIAN_DEMO_BASE_URL` si aplica).
-- El Core las resuelve a `APPIAN_BASE_URL` en tiempo de ejecución según el `env`/`target_env` seleccionado.
+**Importante:**
+- Los secretos `ICF_OVERRIDES_*` se definen solo en el **repo wrapper**, no en el Core.  
+- El Core únicamente los **consume** para generar el archivo temporal `customization.properties` antes del despliegue.  
+- El archivo es efímero y nunca imprime valores sensibles en los logs.  
+- Los formatos JSON legacy siguen siendo aceptados pero se consideran **obsoletos**.
 
-## Roadmap de la integración real (siguiente iteración)
-- Implementar llamadas a Appian Deployment API en los scripts (auth, export, inspect, import).
-- Manejo de artefactos: subir `artifact_path` a Artifacts de Actions o a un bucket externo.
-- Validaciones y gating: inspección en QA, approvals manuales para PROD.
-- Trazabilidad: IDs de deployment, logs estructurados y auditoría.
-- Versionamiento de acciones (tags semánticos) para uso estable desde sandboxes.
+---
+
+## 🧱 Responsabilidad del Core
+
+- Centralizar la lógica CI/CD de Appian en acciones reutilizables.  
+- Abstraer la comunicación con las APIs de Appian.  
+- Garantizar compatibilidad semántica entre versiones.  
+- Ofrecer una interfaz estandarizada para los repos *wrapper*.  
+
+---
+
+## 🧭 Versionamiento y mantenimiento
+
+- `main`: rama estable y auditada; solo recibe merges aprobados desde `develop` y representa el estado listo para despliegues productivos.  
+- `develop`: rama estable de desarrollo; concentra la integración continua y sirve como base para QA.  
+- Ramas de feature/hotfix: se crean desde `develop` (ej. `feature/<ticket>-descripcion`), se validan con PR y se eliminan tras el merge.  
+- Las acciones del Core permanecen inmutables en los repos wrapper; cualquier ajuste debe realizarse mediante branches internos y PR hacia `develop`.
+
+---
+
+## 📞 Contacto y soporte
+
+**Equipo CI/CD Appian – VR Group / Bice Vida**
+
+- **Consultor / Developer:** Maximiliano Tombolini — `mtombolini@vr-group.cl`  
+- **Lead Delivery Service:** Ángel Barroyeta — `abarroyeta@vrgroup.cl`  
+- **Arquitecto Appian:** Ignacio Arriagada — `iarriagada@vrgroup.cl`
+
+Para incidencias o solicitudes evolutivas, abrir un **Issue** en [`appian-cicd-core`](https://github.com/vrgroup/appian-cicd-core) o contactar al equipo anterior según corresponda.

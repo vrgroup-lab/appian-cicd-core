@@ -1,5 +1,5 @@
 name: appian-build-icf
-description: Construye un ICF efímero fusionando overrides YAML + JSON sensibles
+description: Construye un ICF efímero fusionando overrides YAML + secretos key=value sensibles
 
 inputs:
   template_path:

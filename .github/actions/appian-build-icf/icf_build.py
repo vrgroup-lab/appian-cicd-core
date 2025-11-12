@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""Genera un ICF efímero combinando overrides YAML + JSON sensibles."""
+"""Genera un ICF efímero combinando overrides YAML + secretos key=value."""
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
 from pathlib import Path
-from typing import Dict, Iterable, Tuple
+from typing import Dict, Iterable, Tuple, NamedTuple
 
 import yaml
 
@@ -24,6 +25,11 @@ ALLOWED_PREFIXES: Tuple[str, ...] = (
 )
 
 PROTECTED_SUFFIX = ".forceoverrideprotection"
+
+
+class OverridesPayload(NamedTuple):
+    data: Dict[str, object]
+    count: int
 
 
 def _log(msg: str) -> None:
@@ -60,7 +66,7 @@ def _load_yaml(path: Path, env: str) -> Dict[str, object]:
     return _flatten(selected)
 
 
-def _load_json_overrides(raw: str) -> Dict[str, object]:
+def _load_legacy_json_overrides(raw: str) -> Dict[str, object]:
     raw = raw.strip()
     if not raw:
         return {}
@@ -71,6 +77,45 @@ def _load_json_overrides(raw: str) -> Dict[str, object]:
     if not isinstance(parsed, dict):
         raise ValueError("ICF_JSON_OVERRIDES debe ser un objeto JSON")
     return _flatten(parsed)
+
+
+def _load_kv_overrides(raw: str) -> OverridesPayload:
+    overrides: Dict[str, str] = {}
+    valid_lines = 0
+    for idx, original_line in enumerate(raw.splitlines(), 1):
+        stripped = original_line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if "=" not in original_line:
+            raise ValueError(
+                f"Línea {idx} de ICF_JSON_OVERRIDES no contiene '='"
+            )
+        key_part, value_part = original_line.split("=", 1)
+        key = key_part.strip()
+        if not key:
+            raise ValueError(
+                f"Línea {idx} de ICF_JSON_OVERRIDES no define clave antes de '='"
+            )
+        overrides[key] = value_part
+        valid_lines += 1
+    if valid_lines == 0:
+        raise ValueError("ICF_JSON_OVERRIDES no contiene líneas válidas")
+    return OverridesPayload(overrides, valid_lines)
+
+
+def _load_sensitive_overrides(raw: str | None) -> OverridesPayload:
+    if raw is None:
+        raise ValueError("ICF_JSON_OVERRIDES no está definido")
+    normalized = raw.strip()
+    if not normalized:
+        raise ValueError("ICF_JSON_OVERRIDES está vacío")
+    if normalized.lstrip().startswith("{"):
+        data = _load_legacy_json_overrides(normalized)
+        if not data:
+            raise ValueError("ICF_JSON_OVERRIDES (JSON) no contiene claves")
+        _log("::notice::ICF_JSON_OVERRIDES en formato JSON (deprecated)")
+        return OverridesPayload(data, len(data))
+    return _load_kv_overrides(raw)
 
 
 def _is_whitelisted(key: str) -> bool:
@@ -95,8 +140,8 @@ def build_icf(template_path: Path, map_path: Path | None, env: str, out_path: Pa
     if map_path:
         yaml_data = _load_yaml(map_path, env)
 
-    json_env = os.environ.get("ICF_JSON_OVERRIDES", "")
-    json_data = _load_json_overrides(json_env)
+    overrides_payload = _load_sensitive_overrides(os.environ.get("ICF_JSON_OVERRIDES"))
+    json_data = overrides_payload.data
 
     merged: Dict[str, str] = {}
     whitelist_ignored: list[str] = []
@@ -211,8 +256,11 @@ def build_icf(template_path: Path, map_path: Path | None, env: str, out_path: Pa
                 raise RuntimeError(f"{key}=true no permitido en env != dev")
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text("".join(processed_lines), encoding="utf-8")
+    rendered = "".join(processed_lines)
+    out_path.write_text(rendered, encoding="utf-8")
+    digest = hashlib.sha256(rendered.encode("utf-8")).hexdigest()
     _log(f"ICF generado en {out_path}")
+    _log(f"::notice::ICF_JSON_OVERRIDES lineas_validas={overrides_payload.count} sha256={digest}")
     return out_path.resolve()
 
 
