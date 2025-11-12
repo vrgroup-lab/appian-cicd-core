@@ -197,14 +197,15 @@ def import_package(base_url: str, api_key: str, package_path: Path,
         except Exception as e:
             log(f"No se pudo obtener deployment log: {e}")
 
+    if final_status != "COMPLETED":
+        _print_log()
+
     bad_statuses = {"FAILED", "REJECTED"}
     error_statuses = {"COMPLETED_WITH_ERRORS", "COMPLETED_WITH_IMPORT_ERRORS", "COMPLETED_WITH_PUBLISH_ERRORS"}
 
     if final_status in bad_statuses:
-        _print_log()
         raise RuntimeError(f"Import FAILED: status={final_status}")
     if final_status in error_statuses:
-        _print_log()
         raise RuntimeError(f"Import completado con errores: status={final_status}")
 
     objs = (summary.get("objects") or {})
