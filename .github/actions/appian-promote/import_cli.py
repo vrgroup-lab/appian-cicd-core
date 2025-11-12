@@ -208,7 +208,12 @@ def import_package(
     summary = final.get("summary") or {}
     log_url = summary.get("deploymentLogUrl") or final.get("deploymentLogUrl")
 
+    log_was_printed = False
+
     def _print_log():
+        nonlocal log_was_printed
+        if log_was_printed:
+            return
         try:
             if log_url:
                 log("--- Deployment log (tail) ---")
@@ -217,8 +222,12 @@ def import_package(
                 for ln in lines[-200:]:
                     log(ln)
                 log("--- Fin deployment log ---")
+                log_was_printed = True
         except Exception as e:
             log(f"No se pudo obtener deployment log: {e}")
+
+    if final_status != "COMPLETED":
+        _print_log()
 
     bad_statuses = {"FAILED", "REJECTED"}
     error_statuses = {
