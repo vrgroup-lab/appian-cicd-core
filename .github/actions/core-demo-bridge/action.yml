@@ -1,0 +1,36 @@
+name: "Core Demo Bridge"
+description: "Composite que escribe un archivo en el core usando el token del GitHub App"
+inputs:
+  app-token:
+    description: "Installation token del GitHub App"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout core repo con App token
+      uses: actions/checkout@v4
+      with:
+        repository: vrgroup-lab/appian-cicd-core
+        token: ${{ inputs.app-token }}
+        path: core-repo
+
+    - name: Append log y hacer commit en core
+      shell: bash
+      run: |
+        cd core-repo
+
+        echo "Run desde composite wrapper → core: $(date)" >> DEMO_FROM_COMPOSITE.log
+
+        git config user.name "vr-cicd-bridge[bot]"
+        git config user.email "vr-cicd-bridge[bot]@users.noreply.github.com"
+
+        git add DEMO_FROM_COMPOSITE.log
+
+        if git diff --cached --quiet; then
+          echo "No hay cambios que commitear."
+          exit 0
+        fi
+
+        git commit -m "chore: demo composite escribiendo en core"
+        git push origin HEAD:main
